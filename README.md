@@ -1,13 +1,13 @@
 # tomchat-v2
 
-Block 0 scaffold for a multi-tenant WhatsApp reservations assistant.
+SaaS multi-tenant (WhatsApp reservations assistant). Blocks 0–2 ready.
 
 ## Requirements
 
 - Node.js 18+
 - npm
 
-## Running
+## Running (dev)
 
 ```bash
 npm install
@@ -15,9 +15,19 @@ npm run dev
 # open http://localhost:3000/health -> {"status":"ok"}
 ```
 
-## Build and start
+## Build & Start (prod)
 
 ```bash
 npm run build
 npm start
+# server runs compiled JS with Node
+```
+
+## Quality
+
+```bash
+npm run lint
+npm run format
+npm run format:check
+npm run typecheck
 ```
