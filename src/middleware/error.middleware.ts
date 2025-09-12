@@ -1,5 +1,7 @@
-import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
+
+import { Request, Response, NextFunction } from 'express';
+
 import { BaseError } from '../core/errors/base-error.js';
 
 export const errorMiddleware = (err: Error, _req: Request, res: Response, _next: NextFunction) => {

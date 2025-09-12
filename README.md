@@ -3,10 +3,12 @@
 Block 0 scaffold for a multi-tenant WhatsApp reservations assistant.
 
 ## Requirements
+
 - Node.js 18+
 - npm
 
 ## Running
+
 ```bash
 npm install
 npm run dev
@@ -14,6 +16,7 @@ npm run dev
 ```
 
 ## Build and start
+
 ```bash
 npm run build
 npm start

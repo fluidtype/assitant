@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+
 import 'dotenv/config';
 import apiRouter from './api/routes/index.js';
 import { tenantMiddleware, errorMiddleware } from './middleware/index.js';
