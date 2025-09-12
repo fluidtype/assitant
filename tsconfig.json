@@ -18,5 +18,6 @@
       "@utils/*": ["src/utils/*"],
       "@config/*": ["src/config/*"]
     }
-  }
+  },
+  "exclude": ["prisma"]
 }

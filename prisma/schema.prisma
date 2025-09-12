@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id           String         @id @default(cuid())
+  name         String
+  timezone     String         @default("Europe/Rome")
+  config       Json?
+  features     Json?
+  users        User[]
+  bookings     Booking[]
+  conversations Conversation[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([name])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  phone        String
+  name         String?
+  createdAt    DateTime @default(now())
+
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  bookings     Booking[]
+  conversations Conversation[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, phone])
+}
+
+model Booking {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userPhone  String
+  name       String
+  people     Int
+  startAt    DateTime
+  endAt      DateTime
+  status     String   @default("confirmed")
+  calendarId String?
+  createdAt  DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  user       User?    @relation(fields: [tenantId, userPhone], references: [tenantId, phone])
+
+  @@index([tenantId, startAt])
+  @@index([tenantId, userPhone])
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userPhone String
+  flow      String
+  context   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  user      User?    @relation(fields: [tenantId, userPhone], references: [tenantId, phone])
+
+  @@index([tenantId, userPhone])
+  @@index([tenantId, createdAt])
+}
