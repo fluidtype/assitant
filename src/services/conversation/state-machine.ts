@@ -1,3 +1,5 @@
+import { NotImplementedError } from '../../core/errors/not-implemented.error.js';
+
 export enum Flow {
   DEFAULT = 'DEFAULT',
 }
@@ -5,7 +7,7 @@ export enum Flow {
 export class ConversationStateMachine {
   current: Flow = Flow.DEFAULT;
 
-  next() {
-    throw new Error('Not implemented');
+  next(): Flow {
+    throw new NotImplementedError();
   }
 }

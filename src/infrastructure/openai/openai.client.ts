@@ -1,1 +1,1 @@
-export const openai = {};
+export const openai = {} as any;

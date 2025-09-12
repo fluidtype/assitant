@@ -1,5 +1,7 @@
+import { NotImplementedError } from '../../core/errors/not-implemented.error.js';
+
 export class QueueManager {
   enqueue(_job: unknown) {
-    throw new Error('Not implemented');
+    throw new NotImplementedError();
   }
 }

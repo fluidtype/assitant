@@ -1,1 +1,1 @@
-export const prisma = {};
+export const prisma = {} as any;

@@ -1,1 +1,1 @@
-export const whatsappClient = {};
+export const whatsappClient = {} as any;

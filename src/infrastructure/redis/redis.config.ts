@@ -1,1 +1,1 @@
-export const redisConfig = {};
+export const redisConfig = { ttl: 1800 };
