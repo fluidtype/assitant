@@ -19,7 +19,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "redis:ping": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const r=await m.pingRedis(); console.log('PING ->', r); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\"",
+    "redis:smoke": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const cKey='conv:demo:+393491234567'; await m.redis.set(cKey, JSON.stringify({flow:'IDLE',context:{},updatedAt:new Date().toISOString()}),{EX:5}); const got=await m.redis.get(cKey); console.log('GET conv ->', got); await new Promise(r=>setTimeout(r,6000)); const after=await m.redis.get(cKey); console.log('AFTER EXPIRE ->', after); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\""
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",
@@ -27,6 +29,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "helmet": "^7.1.0",
+    "redis": "^4.6.12",
     "zod": "^3.23.8"
   },
   "devDependencies": {
