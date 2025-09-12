@@ -20,8 +20,10 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset --force && npm run db:seed",
     "redis:ping": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const r=await m.pingRedis(); console.log('PING ->', r); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\"",
-    "redis:smoke": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const cKey='conv:demo:+393491234567'; await m.redis.set(cKey, JSON.stringify({flow:'IDLE',context:{},updatedAt:new Date().toISOString()}),{EX:5}); const got=await m.redis.get(cKey); console.log('GET conv ->', got); await new Promise(r=>setTimeout(r,6000)); const after=await m.redis.get(cKey); console.log('AFTER EXPIRE ->', after); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\""
+    "redis:smoke": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const cKey='conv:demo:+393491234567'; await m.redis.set(cKey, JSON.stringify({flow:'IDLE',context:{},updatedAt:new Date().toISOString()}),{EX:5}); const got=await m.redis.get(cKey); console.log('GET conv ->', got); await new Promise(r=>setTimeout(r,6000)); const after=await m.redis.get(cKey); console.log('AFTER EXPIRE ->', after); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\"",
+    "check:all": "npm run lint && npm run typecheck && npm run build && npm run format:check"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",
@@ -49,11 +51,10 @@
     "nodemon": "^3.1.0",
     "prettier": "^3.2.5",
     "prisma": "^5.18.0",
-    "ts-node": "^10.9.2",
     "tsx": "^4.7.1",
     "typescript": "^5.4.5"
   },
   "prisma": {
-    "seed": "ts-node --esm --transpile-only prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts"
   }
 }

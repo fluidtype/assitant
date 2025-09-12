@@ -6,8 +6,9 @@ import { config } from '@config/env.config';
 
 import apiRouter from './api/routes/index.js';
 import { tenantMiddleware, errorMiddleware } from './middleware/index.js';
+import { connectRedis, registerRedisShutdownSignals } from './infrastructure/redis/redis.client.js';
 
-void config;
+void config; // force env validation at startup
 
 const app = express();
 
@@ -24,6 +25,18 @@ app.use('/', apiRouter);
 app.use(errorMiddleware);
 
 const PORT = config.PORT;
-app.listen(PORT, () => {
-  console.log(`Tom v2 up on ${PORT}`);
+
+async function bootstrap() {
+  // connect Redis early so caches are ready
+  await connectRedis();
+  registerRedisShutdownSignals();
+
+  app.listen(PORT, () => {
+    console.log(`Tom v2 up on ${PORT}`);
+  });
+}
+
+bootstrap().catch((err) => {
+  console.error('Fatal bootstrap error:', err);
+  process.exit(1);
 });
