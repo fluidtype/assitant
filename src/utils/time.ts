@@ -8,6 +8,7 @@ export function tzOfTenant(tenant: Pick<Tenant, 'timezone'> | { timezone?: strin
 }
 
 export function toZonedDate(iso: string, tz: string): Date {
+  // accept ISO without TZ as local-in-tz; with TZ keep it; return JS Date in UTC instant
   const dt = DateTime.fromISO(iso, { zone: tz });
   if (!dt.isValid) throw new Error('Invalid ISO datetime: ' + iso);
   return dt.toJSDate();
