@@ -29,6 +29,9 @@ export const ConfigSchema = z.object({
 
   WHATSAPP_VERIFY_TOKEN: z.string().min(1, 'WHATSAPP_VERIFY_TOKEN is required'),
   WHATSAPP_WEBHOOK_SECRET: z.string().min(1, 'WHATSAPP_WEBHOOK_SECRET is required'),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1, 'WHATSAPP_PHONE_NUMBER_ID is required'),
+  WHATSAPP_ACCESS_TOKEN: z.string().min(1, 'WHATSAPP_ACCESS_TOKEN is required'),
+  WHATSAPP_APP_SECRET: z.string().min(1, 'WHATSAPP_APP_SECRET is required'),
 
   TIMEZONE: z.string().default('Europe/Rome'),
 

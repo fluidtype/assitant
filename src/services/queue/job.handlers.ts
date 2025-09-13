@@ -1,7 +1,10 @@
-import { NotImplementedError } from '../../core/errors/not-implemented.error.js';
+import type { Job } from 'bullmq';
 
-export class JobHandlers {
-  handle(_job: unknown) {
-    throw new NotImplementedError();
-  }
+import type { WAEvent } from '../../types/index.js';
+
+import { MessageProcessor } from './message.processor.js';
+
+export async function processJob(job: Job<WAEvent>): Promise<void> {
+  const processor = new MessageProcessor();
+  await processor.processMessage(job);
 }

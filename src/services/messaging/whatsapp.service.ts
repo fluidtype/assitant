@@ -1,7 +1,22 @@
-import { NotImplementedError } from '../../core/errors/not-implemented.error.js';
+import { sendWhatsAppMessage } from '@infra/whatsapp/whatsapp.client.js';
+
+import { logger } from '@utils/logger.js';
 
 export class WhatsAppService {
-  sendMessage(_to: string, _message: string) {
-    throw new NotImplementedError();
+  async sendMessage(to: string, body: string): Promise<void> {
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: { body, preview_url: false },
+    };
+
+    try {
+      await sendWhatsAppMessage(payload);
+    } catch (err) {
+      logger.error('WhatsApp send error', err);
+      throw err;
+    }
   }
 }

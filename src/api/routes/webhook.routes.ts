@@ -1,9 +1,9 @@
 import { Router } from 'express';
 
-import { verify, handle } from '../controllers/webhook.controller.js';
+import { verifyHandler, webhookHandler } from '../controllers/webhook.controller.js';
 
 const router = Router();
-router.get('/', verify);
-router.post('/', handle);
+router.get('/', verifyHandler);
+router.post('/', webhookHandler);
 
 export default router;
