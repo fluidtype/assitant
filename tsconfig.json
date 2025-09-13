@@ -19,5 +19,5 @@
       "@config/*": ["src/config/*"]
     }
   },
-  "exclude": ["prisma"]
+  "exclude": ["prisma", "vitest.config.ts"]
 }

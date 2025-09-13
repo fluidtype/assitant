@@ -24,7 +24,9 @@
     "db:reset": "prisma migrate reset --force && npm run db:seed",
     "redis:ping": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const r=await m.pingRedis(); console.log('PING ->', r); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\"",
     "redis:smoke": "node -e \"import('./dist/infrastructure/redis/redis.client.js').then(async m=>{await m.connectRedis(); const cKey='conv:demo:+393491234567'; await m.redis.set(cKey, JSON.stringify({flow:'IDLE',context:{},updatedAt:new Date().toISOString()}),{EX:5}); const got=await m.redis.get(cKey); console.log('GET conv ->', got); await new Promise(r=>setTimeout(r,6000)); const after=await m.redis.get(cKey); console.log('AFTER EXPIRE ->', after); await m.disconnectRedis();}).catch(e=>{console.error(e);process.exit(1);})\"",
-    "check:all": "npm run lint && npm run typecheck && npm run build && npm run format:check"
+    "check:all": "npm run lint && npm run typecheck && npm run build && npm run format:check",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",
@@ -61,7 +63,9 @@
     "tsc-alias": "^1.8.10",
     "tsx": "^4.16.0",
     "typescript": "^5.4.5",
-    "globals": "^15.6.0"
+    "globals": "^15.6.0",
+    "vitest": "^1.6.0",
+    "vite-tsconfig-paths": "^4.3.1"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
