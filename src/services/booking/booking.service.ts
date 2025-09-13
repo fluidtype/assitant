@@ -6,7 +6,6 @@ import { ValidationService } from '@services/booking/validation.service.js';
 
 import { ConflictError } from '@core/errors/conflict.error.js';
 import { NotFoundError } from '@core/errors/not-found.error.js';
-import { BusinessRuleError } from '@core/errors/business-rule.error.js';
 import type { CreateBookingDTO, ModifyBookingDTO } from '@core/interfaces/booking.types.js';
 import { BookingRepository } from '@core/repositories/booking.repo.js';
 import { TenantRepository } from '@core/repositories/tenant.repo.js';
@@ -41,39 +40,27 @@ export class BookingService {
       tenant,
     );
     if (!avail.available) {
-      if (avail.reason === 'capacity') {
-        const err = new ConflictError('Disponibilità insufficiente');
-        if (avail.alternatives?.length) {
-          (err as any).data = { alternatives: avail.alternatives };
-        }
-        throw err;
-      }
-      throw new BusinessRuleError('Slot non disponibile');
+      const err = new ConflictError('Disponibilità insufficiente');
+      (err as any).data = {
+        reason: avail.reason,
+        alternatives: avail.alternatives ?? [],
+      };
+      throw err;
     }
 
     const created = await (prisma as any).$transaction(async (tx: any) => {
       await pgAdvisoryXactLock(`avail:${dto.tenantId}:${dayKey}`);
 
-      const overlaps = await tx.booking.findMany({
-        where: {
-          tenantId: dto.tenantId,
-          status: 'confirmed',
-          startAt: { lt: endAt },
-          endAt: { gt: startAt },
-        },
-        select: { people: true },
-      });
-      const used = overlaps.reduce((s: number, b: any) => s + b.people, 0);
-      const capacity = (tenant.config as any)?.capacity ?? 50;
-      if (capacity - used < dto.people) {
-        const again = await this.availabilityService.checkAvailability(
-          { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
-          tenant,
-        );
+      const again = await this.availabilityService.checkAvailability(
+        { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
+        tenant,
+      );
+      if (!again.available) {
         const err = new ConflictError('Disponibilità insufficiente');
-        if (again.alternatives?.length) {
-          (err as any).data = { alternatives: again.alternatives };
-        }
+        (err as any).data = {
+          reason: again.reason,
+          alternatives: again.alternatives ?? [],
+        };
         throw err;
       }
 
@@ -116,26 +103,43 @@ export class BookingService {
       { tenantId: dto.tenantId, startAt, endAt, people },
       tenant,
     );
-    if (!avail.available) throw new BusinessRuleError('Slot non disponibile');
+    let left = avail.left;
+    if (
+      existing.startAt.getTime() === startAt.getTime() &&
+      existing.endAt.getTime() === endAt.getTime()
+    ) {
+      left += existing.people;
+    }
+    if (!avail.available || left < people) {
+      const err = new ConflictError('Disponibilità insufficiente');
+      (err as any).data = {
+        reason: avail.reason,
+        alternatives: avail.alternatives ?? [],
+      };
+      throw err;
+    }
 
     const updated = await (prisma as any).$transaction(async (tx: any) => {
       await pgAdvisoryXactLock(`avail:${dto.tenantId}:${newDayKey}`);
 
-      const overlaps = await tx.booking.findMany({
-        where: {
-          tenantId: dto.tenantId,
-          status: 'confirmed',
-          startAt: { lt: endAt },
-          endAt: { gt: startAt },
-        },
-        select: { id: true, people: true },
-      });
-      let used = overlaps.reduce((s: number, b: any) => s + b.people, 0);
-      const found = overlaps.find((b: any) => b.id === existing.id);
-      if (found) used -= existing.people;
-      const capacity = (tenant.config as any)?.capacity ?? 50;
-      if (capacity - used < people) {
-        throw new ConflictError('Disponibilità insufficiente');
+      const again = await this.availabilityService.checkAvailability(
+        { tenantId: dto.tenantId, startAt, endAt, people },
+        tenant,
+      );
+      let againLeft = again.left;
+      if (
+        existing.startAt.getTime() === startAt.getTime() &&
+        existing.endAt.getTime() === endAt.getTime()
+      ) {
+        againLeft += existing.people;
+      }
+      if (!again.available || againLeft < people) {
+        const err = new ConflictError('Disponibilità insufficiente');
+        (err as any).data = {
+          reason: again.reason,
+          alternatives: again.alternatives ?? [],
+        };
+        throw err;
       }
 
       const patchDb: any = {};
