@@ -11,7 +11,7 @@ import { BookingRepository } from '@core/repositories/booking.repo.js';
 import { AvailabilityCache } from '@services/cache/availability-cache.js';
 import { readAvailabilityConfig } from './config.defaults.js';
 import { buildSlotsForDay } from './opening-hours.util.js';
-import { tzOfTenant, formatYMD } from '@utils/time.js';
+import { formatYMD } from '@utils/time.js';
 
 export class AvailabilityService {
   constructor(
@@ -69,8 +69,12 @@ export class AvailabilityService {
     start: DateTime,
     durationMin: number,
     slotSize: number,
+    tz: string,
   ): { ok: boolean; left: number } {
-    const idx = grid.findIndex((s) => DateTime.fromISO(s.start).equals(start));
+    const reqStart = start.setZone(tz, { keepLocalTime: false });
+    const idx = grid.findIndex(
+      (s) => DateTime.fromISO(s.start, { zone: tz }).toMillis() === reqStart.toMillis(),
+    );
     if (idx === -1) return { ok: false, left: 0 };
     const needed = Math.ceil(durationMin / slotSize);
     let left = Infinity;
@@ -78,8 +82,9 @@ export class AvailabilityService {
       const current = grid[idx + i];
       if (!current) return { ok: false, left: 0 };
       if (i > 0) {
-        const prevEnd = DateTime.fromISO(grid[idx + i - 1].end);
-        if (!DateTime.fromISO(current.start).equals(prevEnd)) return { ok: false, left: 0 };
+        const prevEnd = DateTime.fromISO(grid[idx + i - 1].end, { zone: tz }).toMillis();
+        const currStart = DateTime.fromISO(current.start, { zone: tz }).toMillis();
+        if (currStart !== prevEnd) return { ok: false, left: 0 };
       }
       if (!current.available) return { ok: false, left: Math.min(left, current.left) };
       left = Math.min(left, current.left);
@@ -95,25 +100,34 @@ export class AvailabilityService {
     max = 6,
   ): AlternativeSuggestion[] {
     if (grid.length === 0) return [];
-    const slotSize = DateTime.fromISO(grid[0].end).diff(DateTime.fromISO(grid[0].start), 'minutes').minutes;
+    const slotSize = DateTime.fromISO(grid[0].end, { zone: tz })
+      .diff(DateTime.fromISO(grid[0].start, { zone: tz }), 'minutes')
+      .minutes;
+    const base = reqStart.setZone(tz, { keepLocalTime: false });
     const candidates: { start: DateTime; left: number }[] = [];
     for (const slot of grid) {
       const start = DateTime.fromISO(slot.start, { zone: tz });
-      const { ok, left } = this.mergeSlotsToWindow(grid, start, durationMin, slotSize);
+      const { ok, left } = this.mergeSlotsToWindow(grid, start, durationMin, slotSize, tz);
       if (ok) {
         candidates.push({ start, left });
       }
     }
-    const uniq = candidates.filter((c, i, arr) => arr.findIndex((o) => o.start.equals(c.start)) === i);
+    const uniq = candidates.filter(
+      (c, i, arr) => arr.findIndex((o) => o.start.toMillis() === c.start.toMillis()) === i,
+    );
     const sorted = uniq
-      .filter((c) => !c.start.equals(reqStart))
-      .sort((a, b) => Math.abs(a.start.diff(reqStart).as('minutes')) - Math.abs(b.start.diff(reqStart).as('minutes')))
+      .filter((c) => c.start.toMillis() !== base.toMillis())
+      .sort(
+        (a, b) =>
+          Math.abs(a.start.diff(base).as('minutes')) -
+          Math.abs(b.start.diff(base).as('minutes')),
+      )
       .slice(0, max);
     return sorted.map((c, i) => ({
       start: c.start.toISO(),
       end: c.start.plus({ minutes: durationMin }).toISO(),
       left: c.left,
-      reason: i === 0 ? 'closest' : c.start < reqStart ? 'shift_earlier' : 'shift_later',
+      reason: i === 0 ? 'closest' : c.start < base ? 'shift_earlier' : 'shift_later',
     }));
   }
 
@@ -158,7 +172,7 @@ export class AvailabilityService {
     tenant: Tenant,
   ): Promise<IntelligentAvailabilityResult> {
     const cfg = readAvailabilityConfig(tenant);
-    const tz = tzOfTenant(tenant);
+    const tz = cfg.timezone;
     const start = DateTime.fromJSDate(input.startAt, { zone: tz });
     const end = DateTime.fromJSDate(input.endAt, { zone: tz });
     const now = DateTime.now().setZone(tz);
@@ -182,7 +196,7 @@ export class AvailabilityService {
       milliseconds: start.millisecond,
     });
     const durationMin = end.diff(start, 'minutes').minutes;
-    const { ok, left } = this.mergeSlotsToWindow(grid, alignedStart, durationMin, slotSize);
+    const { ok, left } = this.mergeSlotsToWindow(grid, alignedStart, durationMin, slotSize, tz);
     const used = cfg.capacity - left;
     if (ok && left >= input.people) {
       return { available: true, capacity: cfg.capacity, used, left };
