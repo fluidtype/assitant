@@ -48,12 +48,15 @@ model Booking {
   status     String   @default("confirmed")
   calendarId String?
   createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  version    Int      @default(0)
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id])
   user       User?    @relation(fields: [tenantId, userPhone], references: [tenantId, phone])
 
   @@index([tenantId, startAt])
   @@index([tenantId, userPhone])
+  @@index([tenantId, status])
 }
 
 model Conversation {
