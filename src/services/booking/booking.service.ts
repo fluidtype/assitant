@@ -41,6 +41,13 @@ export class BookingService {
       tenant,
     );
     if (!avail.available) {
+      if (avail.reason === 'capacity') {
+        const err = new ConflictError('Disponibilità insufficiente');
+        if (avail.alternatives?.length) {
+          (err as any).data = { alternatives: avail.alternatives };
+        }
+        throw err;
+      }
       throw new BusinessRuleError('Slot non disponibile');
     }
 
@@ -59,7 +66,15 @@ export class BookingService {
       const used = overlaps.reduce((s: number, b: any) => s + b.people, 0);
       const capacity = (tenant.config as any)?.capacity ?? 50;
       if (capacity - used < dto.people) {
-        throw new ConflictError('Disponibilità insufficiente');
+        const again = await this.availabilityService.checkAvailability(
+          { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
+          tenant,
+        );
+        const err = new ConflictError('Disponibilità insufficiente');
+        if (again.alternatives?.length) {
+          (err as any).data = { alternatives: again.alternatives };
+        }
+        throw err;
       }
 
       const booking = await tx.booking.create({
