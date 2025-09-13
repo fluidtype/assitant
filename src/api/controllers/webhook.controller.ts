@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 
-import { config } from '@config/env.config';
+import { enqueue } from '@services/queue/queue.manager.js';
 
-import { enqueue } from '../../services/queue/queue.manager.js';
+import { config } from '@config/env.config';
 
 import { verifySignature } from './webhook.validator.js';
 
@@ -46,7 +46,9 @@ export const webhookHandler = (req: Request, res: Response): void => {
             message: msg.text.body,
             messageId: msg.id,
           };
-          void enqueue(event);
+          if (process.env.START_WORKER !== 'false') {
+            void enqueue(event);
+          }
         }
       }
     }
