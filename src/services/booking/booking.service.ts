@@ -73,12 +73,12 @@ export class BookingService {
         },
       });
 
-      await this.cache.invalidateAvailabilityForDate(dto.tenantId, dayKey);
       return booking;
     });
 
+    await this.cache.invalidateAvailabilityForDate(dto.tenantId, dayKey);
     incrementCounter('booking_created');
-    logger.info('booking created', created.id);
+    logger.info('[booking] created', { tenantId: tenant.id, id: (created as Booking).id });
     return created as Booking;
   }
 
@@ -93,8 +93,8 @@ export class BookingService {
     const tz = tzOfTenant(tenant);
     const startAt = toZonedDate(patch.startAtISO ?? existing.startAt.toISOString(), tz);
     const endAt = toZonedDate(patch.endAtISO ?? existing.endAt.toISOString(), tz);
-    const dayKeyOld = formatYMD(existing.startAt, tz);
-    const dayKeyNew = formatYMD(startAt, tz);
+    const oldDayKey = formatYMD(existing.startAt, tz);
+    const newDayKey = formatYMD(startAt, tz);
     const people = patch.people ?? existing.people;
 
     const avail = await this.availabilityService.checkAvailability(
@@ -104,7 +104,7 @@ export class BookingService {
     if (!avail.available) throw new BusinessRuleError('Slot non disponibile');
 
     const updated = await (prisma as any).$transaction(async (tx: any) => {
-      await pgAdvisoryXactLock(`avail:${dto.tenantId}:${dayKeyNew}`);
+      await pgAdvisoryXactLock(`avail:${dto.tenantId}:${newDayKey}`);
 
       const overlaps = await tx.booking.findMany({
         where: {
@@ -141,16 +141,16 @@ export class BookingService {
       });
       if (res.count === 0) throw new ConflictError('Versione conflittuale');
 
-      await this.cache.invalidateAvailabilityForDate(dto.tenantId, dayKeyOld);
-      if (dayKeyNew !== dayKeyOld) {
-        await this.cache.invalidateAvailabilityForDate(dto.tenantId, dayKeyNew);
-      }
-
       return tx.booking.findFirst({ where: { id: dto.id, tenantId: dto.tenantId } });
     });
 
+    await this.cache.invalidateAvailabilityForDate(tenant.id, oldDayKey);
+    if (newDayKey !== oldDayKey) {
+      await this.cache.invalidateAvailabilityForDate(tenant.id, newDayKey);
+    }
+
     incrementCounter('booking_modified');
-    logger.info('booking modified', updated?.id);
+    logger.info('[booking] modified', { tenantId: tenant.id, id: (updated as Booking).id });
     return updated as Booking;
   }
 
@@ -164,7 +164,7 @@ export class BookingService {
     await this.cache.invalidateAvailabilityForDate(tenantId, dayKey);
 
     incrementCounter('booking_cancelled');
-    logger.info('booking cancelled', id);
+    logger.info('[booking] cancelled', { tenantId, id });
     return updated as Booking;
   }
 
