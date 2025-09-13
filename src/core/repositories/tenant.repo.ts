@@ -1,7 +1,7 @@
-import { NotImplementedError } from '../errors/not-implemented.error.js';
+import { prisma } from '@infra/database/prisma.client.js';
 
 export class TenantRepository {
-  findById(_id: string) {
-    throw new NotImplementedError();
+  async findById(id: string) {
+    return (prisma as any).tenant.findUnique({ where: { id } });
   }
 }
