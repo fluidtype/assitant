@@ -8,6 +8,8 @@ const instance = axios.create({
     Authorization: `Bearer ${config.WHATSAPP_ACCESS_TOKEN}`,
     'Content-Type': 'application/json',
   },
+  timeout: 10000,
+  validateStatus: (s) => s < 500,
 });
 
 export async function sendWhatsAppMessage(payload: object): Promise<any> {

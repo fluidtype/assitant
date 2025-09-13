@@ -20,7 +20,6 @@ export class MessageProcessor {
     try {
       const { replyText } = await this.conversation.processMessage(job.data);
       await this.whatsapp.sendMessage(userPhone, replyText);
-      await redis.del(dedupKey);
     } catch (err) {
       if (job.attemptsMade < (job.opts.attempts ?? 0)) {
         throw err as Error;

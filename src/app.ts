@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import { config } from '@config/env.config';
 
 import apiRouter from './api/routes/index.js';
-import { rawBody, tenantMiddleware, errorMiddleware } from './middleware/index.js';
+import { tenantMiddleware, errorMiddleware } from './middleware/index.js';
 import { connectRedis, registerRedisShutdownSignals } from './infrastructure/redis/redis.client.js';
 
 void config; // force env validation at startup
@@ -14,7 +14,6 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
-app.use(rawBody);
 app.use(express.json());
 
 app.get('/health', (_req: Request, res: Response) => {
