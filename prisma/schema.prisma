@@ -40,7 +40,7 @@ model User {
 model Booking {
   id         String   @id @default(cuid())
   tenantId   String
-  userPhone  String
+  userPhone  String?
   name       String
   people     Int
   startAt    DateTime
@@ -59,7 +59,7 @@ model Booking {
 model Conversation {
   id        String   @id @default(cuid())
   tenantId  String
-  userPhone String
+  userPhone String?
   flow      String
   context   Json
   createdAt DateTime @default(now())
