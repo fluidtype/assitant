@@ -14,6 +14,9 @@ const app = express();
 
 app.use(helmet());
 app.use(cors());
+// raw body only for webhook signature verification
+app.use('/v1/webhook', express.raw({ type: '*/*' }));
+// json parser for all other routes
 app.use(express.json());
 
 app.get('/health', (_req: Request, res: Response) => {

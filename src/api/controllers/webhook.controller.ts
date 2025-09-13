@@ -22,7 +22,15 @@ export const webhookHandler = (req: Request, res: Response): void => {
     res.sendStatus(401);
     return;
   }
-  const entries = req.body?.entry ?? [];
+  let payload: any = req.body;
+  if (Buffer.isBuffer(payload)) {
+    try {
+      payload = JSON.parse(payload.toString('utf8'));
+    } catch {
+      payload = {};
+    }
+  }
+  const entries = payload.entry ?? [];
   for (const entry of entries) {
     const changes = entry.changes ?? [];
     for (const change of changes) {
