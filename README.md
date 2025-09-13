@@ -17,6 +17,7 @@ cd ~/Desktop/tomchat-v2
 
 # 2) env
 cp .env.example .env
+# l'app parte anche senza variabili OpenAI/WhatsApp in dev
 
 # 3) servizi (scegli una via)
 # Docker:
@@ -35,6 +36,7 @@ npm run db:seed
 
 # 5) avvia
 npm run dev
+# la verifica webhook richiede un WHATSAPP_VERIFY_TOKEN valido
 ```
 
 ## Smoke Test
@@ -42,8 +44,8 @@ npm run dev
 ```bash
 curl -s http://localhost:3000/health
 curl -s http://localhost:3000/v1/health
-curl -s -H "x-tenant-id: demo" http://localhost:3000/v1/webhook
-curl -s -X POST -H "Content-Type: application/json" -H "x-tenant-id: demo" -d '{"text":"ping"}' http://localhost:3000/v1/webhook
+curl -s "http://localhost:3000/v1/webhook?hub.mode=subscribe&hub.verify_token=<YOUR_TOKEN>&hub.challenge=42"
+# POST richiede firma HMAC reale da Meta, altrimenti risponde 401
 ```
 
 ## Useful Scripts
