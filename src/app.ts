@@ -7,6 +7,7 @@ import { config } from '@config/env.config';
 import apiRouter from './api/routes/index.js';
 import { tenantMiddleware, errorMiddleware } from './middleware/index.js';
 import { connectRedis, registerRedisShutdownSignals } from './infrastructure/redis/redis.client.js';
+import { startQueue } from './services/queue/queue.manager.js';
 
 void config; // force env validation at startup
 
@@ -30,9 +31,17 @@ app.use(errorMiddleware);
 const PORT = config.PORT;
 
 async function bootstrap() {
-  // connect Redis early so caches are ready
-  await connectRedis();
-  registerRedisShutdownSignals();
+  connectRedis()
+    .then(() => {
+      registerRedisShutdownSignals();
+      if (process.env.START_WORKER !== 'false') {
+        startQueue();
+      }
+    })
+    .catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('Redis connection failed:', msg);
+    });
 
   app.listen(PORT, () => {
     console.log(`Tom v2 up on ${PORT}`);
