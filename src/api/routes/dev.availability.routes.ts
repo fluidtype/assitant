@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { Tenant } from '@prisma/client';
 import { prisma } from '@infra/database/prisma.client.js';
 import { AvailabilityService } from '@services/booking/availability.service.js';
 import { formatYMD } from '@utils/time.js';
@@ -34,7 +35,7 @@ if (process.env.NODE_ENV !== 'production') {
       const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
 
-      const out = await svc.checkAvailability({ tenantId, startAt, endAt, people }, tenant as any);
+      const out = await svc.checkAvailability({ tenantId, startAt, endAt, people }, tenant as Tenant);
       res.json(out);
     } catch (e) { next(e); }
   });
@@ -48,7 +49,7 @@ if (process.env.NODE_ENV !== 'production') {
       if (!tenant) return res.status(404).json({ message: 'Tenant not found' });
       const tz = tenant.timezone ?? 'Europe/Rome';
       const dayISO = formatYMD(new Date(dateStr), tz);
-      const slots = await svc.getDailyAvailability(tenant, dayISO);
+      const slots = await svc.getDailyAvailability(tenant as Tenant, dayISO);
       res.json({ date: dayISO, slots });
     } catch (e) { next(e); }
   });

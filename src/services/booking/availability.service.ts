@@ -34,7 +34,11 @@ export class AvailabilityService {
       dayEnd.toJSDate(),
     );
 
-    const bookingIntervals = bookings.map((b: any) => ({
+    interface Occupancy {
+      interval: Interval;
+      people: number;
+    }
+    const bookingIntervals: Occupancy[] = bookings.map((b: any) => ({
       interval: Interval.fromDateTimes(
         DateTime.fromJSDate(b.startAt, { zone: tz }),
         DateTime.fromJSDate(b.endAt, { zone: tz }).plus({ minutes: cfg.turnoverMinutes }),
@@ -42,15 +46,16 @@ export class AvailabilityService {
       people: b.people,
     }));
 
-    return slots.map((slot) => {
+    const validSlots = slots.filter((s) => s.start && s.end);
+    return validSlots.map((slot) => {
       const used = bookingIntervals.reduce(
-        (sum, b) => (b.interval.overlaps(slot) ? sum + b.people : sum),
+        (sum: number, b: Occupancy) => (b.interval.overlaps(slot) ? sum + b.people : sum),
         0,
       );
       const left = Math.max(cfg.capacity - used, 0);
       return {
-        start: slot.start.toISO(),
-        end: slot.end.toISO(),
+        start: slot.start!.toISO(),
+        end: slot.end!.toISO(),
         capacity: cfg.capacity,
         used,
         left,
