@@ -1,3 +1,3 @@
-export * from './nlu.service.js';
-export * from './prompt.builder.js';
-export * from './confirmation.parser.js';
+export { PromptBuilder } from './prompt.builder.js';
+export { EnhancedNLUService } from './nlu.service.js';
+export { ConfirmationParser } from './confirmation.parser.js';
