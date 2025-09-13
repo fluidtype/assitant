@@ -15,3 +15,5 @@ export interface IntentResult {
   intent: string;
   confidence: number;
 }
+
+export * from './booking.types.js';
