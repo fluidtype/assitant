@@ -5,13 +5,15 @@ import type { ConversationState } from '@services/cache/conversation-cache.js';
 import type { TenantEntity } from '@core/entities/tenant.entity.js';
 import type { IntentResult } from '@core/interfaces/index.js';
 
+import { getOpenAI } from '@infra/openai/openai.client.js';
+
 import { config } from '@config/env.config';
 
 import { PromptBuilder } from './prompt.builder.js';
 
 export class EnhancedNLUService {
   constructor(
-    private readonly openai: OpenAI = new OpenAI({ apiKey: config.OPENAI_API_KEY }),
+    private readonly openai: OpenAI = getOpenAI(),
     private readonly promptBuilder: PromptBuilder = new PromptBuilder(),
   ) {}
 
@@ -21,6 +23,12 @@ export class EnhancedNLUService {
     tenant: TenantEntity & { config?: Record<string, unknown>; features?: Record<string, unknown> },
   ): Promise<IntentResult> {
     try {
+      if (!config.OPENAI_MODEL) {
+        throw new Error('OPENAI_MODEL is not configured');
+      }
+      if (config.OPENAI_TEMPERATURE === undefined) {
+        throw new Error('OPENAI_TEMPERATURE is not configured');
+      }
       const prompt = this.promptBuilder.buildPrompt({
         message,
         state,

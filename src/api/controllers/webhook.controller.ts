@@ -7,6 +7,9 @@ import { enqueue } from '../../services/queue/queue.manager.js';
 import { verifySignature } from './webhook.validator.js';
 
 export const verifyHandler = (req: Request, res: Response): void => {
+  if (!config.WHATSAPP_VERIFY_TOKEN) {
+    throw new Error('WHATSAPP_VERIFY_TOKEN is not configured');
+  }
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];

@@ -6,6 +6,9 @@ const LogLevel = z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'si
 const toNumber = (fallback: number) =>
   z.preprocess((v) => (v === undefined || v === '' ? fallback : Number(v)), z.number());
 
+const toOptionalNumber = () =>
+  z.preprocess((v) => (v === undefined || v === '' ? undefined : Number(v)), z.number()).optional();
+
 const toBool = (fallback: boolean) =>
   z.preprocess((v) => {
     if (v === undefined || v === '') return fallback;
@@ -23,14 +26,14 @@ export const ConfigSchema = z.object({
   REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
   REDIS_TTL: toNumber(1800),
 
-  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
-  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
-  OPENAI_TEMPERATURE: toNumber(0.3),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().optional(),
+  OPENAI_TEMPERATURE: toOptionalNumber(),
 
-  WHATSAPP_VERIFY_TOKEN: z.string().min(1, 'WHATSAPP_VERIFY_TOKEN is required'),
-  WHATSAPP_PHONE_NUMBER_ID: z.string().min(1, 'WHATSAPP_PHONE_NUMBER_ID is required'),
-  WHATSAPP_ACCESS_TOKEN: z.string().min(1, 'WHATSAPP_ACCESS_TOKEN is required'),
-  WHATSAPP_APP_SECRET: z.string().min(1, 'WHATSAPP_APP_SECRET is required'),
+  WHATSAPP_VERIFY_TOKEN: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_ACCESS_TOKEN: z.string().optional(),
+  WHATSAPP_APP_SECRET: z.string().optional(),
 
   TIMEZONE: z.string().default('Europe/Rome'),
 
