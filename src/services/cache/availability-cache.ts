@@ -12,6 +12,11 @@ export interface AvailabilityPayload {
   date: string; // YYYY-MM-DD
   slots: AvailabilitySlot[];
   lastUpdated: string; // ISO timestamp
+  capacity?: number;
+  slotSizeMinutes?: number;
+  avgDiningMinutes?: number;
+  turnoverMinutes?: number;
+  timezone?: string;
 }
 
 function keyForAvailability(tenantId: string, dateKey: string): string {
