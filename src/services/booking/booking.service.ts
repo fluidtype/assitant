@@ -43,10 +43,8 @@ export class BookingService {
       const err = new ConflictError('Disponibilità insufficiente');
       (err as any).data = {
         reason: avail.reason,
+        alternatives: avail.alternatives ?? [],
       };
-      if (avail.alternatives?.length) {
-        (err as any).data.alternatives = avail.alternatives;
-      }
       throw err;
     }
 
@@ -61,10 +59,8 @@ export class BookingService {
         const err = new ConflictError('Disponibilità insufficiente');
         (err as any).data = {
           reason: again.reason,
+          alternatives: again.alternatives ?? [],
         };
-        if (again.alternatives?.length) {
-          (err as any).data.alternatives = again.alternatives;
-        }
         throw err;
       }
 

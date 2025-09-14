@@ -210,13 +210,17 @@ export class AvailabilityService {
       return { available: true, capacity: cfg.capacity, used, left };
     }
 
-    const alternatives = this.suggestAlternatives(grid, start, durationMin, tz, slotSize);
+    const reason = grid.length === 0 ? 'closed' : 'capacity';
+    const alternatives =
+      reason === 'capacity'
+        ? this.suggestAlternatives(grid, start, durationMin, tz, slotSize)
+        : [];
     return {
       available: false,
       capacity: cfg.capacity,
       used,
       left,
-      reason: grid.length === 0 ? 'closed' : 'capacity',
+      reason,
       alternatives,
     } as IntelligentAvailabilityResult;
   }
