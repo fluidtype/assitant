@@ -35,34 +35,34 @@ export class BookingService {
     const endAt = toZonedDate(dto.endAtISO, tz);
     const dayKey = formatYMD(startAt, tz);
 
-    const avail = await this.availabilityService.checkAvailability(
-      { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
-      tenant,
-    );
-    if (!avail.available) {
-      const err = new ConflictError('Disponibilità insufficiente');
-      (err as any).data = {
-        reason: avail.reason,
-        alternatives: avail.alternatives ?? [],
-      };
-      throw err;
-    }
+      const avail = await this.availabilityService.checkAvailability(
+        { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
+        tenant,
+      );
+      if (!avail.available) {
+        const err = new ConflictError('Disponibilità insufficiente');
+        (err as any).data = {
+          reason: avail.reason ?? 'capacity',
+          alternatives: avail.alternatives ?? [],
+        };
+        throw err;
+      }
 
     const created = await (prisma as any).$transaction(async (tx: any) => {
       await pgAdvisoryXactLock(`avail:${dto.tenantId}:${dayKey}`);
 
-      const again = await this.availabilityService.checkAvailability(
-        { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
-        tenant,
-      );
-      if (!again.available) {
-        const err = new ConflictError('Disponibilità insufficiente');
-        (err as any).data = {
-          reason: again.reason,
-          alternatives: again.alternatives ?? [],
-        };
-        throw err;
-      }
+        const again = await this.availabilityService.checkAvailability(
+          { tenantId: dto.tenantId, startAt, endAt, people: dto.people },
+          tenant,
+        );
+        if (!again.available) {
+          const err = new ConflictError('Disponibilità insufficiente');
+          (err as any).data = {
+            reason: again.reason ?? 'capacity',
+            alternatives: again.alternatives ?? [],
+          };
+          throw err;
+        }
 
       const booking = await tx.booking.create({
         data: {
@@ -117,16 +117,14 @@ export class BookingService {
       ) {
         left += existing.people;
       }
-      if (!avail.available || left < people) {
-        const err = new ConflictError('Disponibilità insufficiente');
-        (err as any).data = {
-          reason: avail.reason,
-        };
-        if (avail.alternatives?.length) {
-          (err as any).data.alternatives = avail.alternatives;
+        if (!avail.available || left < people) {
+          const err = new ConflictError('Disponibilità insufficiente');
+          (err as any).data = {
+            reason: avail.reason ?? 'capacity',
+            alternatives: avail.alternatives ?? [],
+          };
+          throw err;
         }
-        throw err;
-      }
     }
 
     const updated = await (prisma as any).$transaction(async (tx: any) => {
@@ -144,16 +142,14 @@ export class BookingService {
         ) {
           againLeft += existing.people;
         }
-        if (!again.available || againLeft < people) {
-          const err = new ConflictError('Disponibilità insufficiente');
-          (err as any).data = {
-            reason: again.reason,
-          };
-          if (again.alternatives?.length) {
-            (err as any).data.alternatives = again.alternatives;
+          if (!again.available || againLeft < people) {
+            const err = new ConflictError('Disponibilità insufficiente');
+            (err as any).data = {
+              reason: again.reason ?? 'capacity',
+              alternatives: again.alternatives ?? [],
+            };
+            throw err;
           }
-          throw err;
-        }
       }
 
       const patchDb: any = {};
