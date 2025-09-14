@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import { DateTime } from 'luxon';
 
 import { AvailabilityService } from '@services/booking/availability.service.js';
+
 import { BookingRepository } from '@core/repositories/booking.repo.js';
+
 import { prisma } from '@infra/database/prisma.client.js';
 
 class MemoryCache {
@@ -108,7 +110,8 @@ describe('Intelligent AvailabilityService', () => {
     );
     expect(res.available).toBe(false);
     expect(res.reason).toBe('capacity');
-    expect(res.alternatives?.some((a) => a.start.includes('21:30'))).toBe(true);
+    const starts = res.alternatives?.map((a) => a.start) ?? [];
+    expect(starts.some((s) => s.includes('21:30'))).toBe(true);
   });
 
   it('returns invalid when window exceeds closing', async () => {
@@ -146,4 +149,3 @@ describe('Intelligent AvailabilityService', () => {
     expect(gridOpen.length).toBeGreaterThan(0);
   });
 });
-
