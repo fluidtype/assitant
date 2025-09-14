@@ -10,7 +10,7 @@ import type {
 import { BookingRepository } from '@core/repositories/booking.repo.js';
 import { AvailabilityCache } from '@services/cache/availability-cache.js';
 import { readAvailabilityConfig } from './config.defaults.js';
-import { buildSlotsForDay } from './opening-hours.util.js';
+import { buildSlotsForDay, openingWindowsForDate } from './opening-hours.util.js';
 import { formatYMD } from '@utils/time.js';
 
 export class AvailabilityService {
@@ -97,12 +97,10 @@ export class AvailabilityService {
     reqStart: DateTime,
     durationMin: number,
     tz: string,
+    slotSize: number,
     max = 6,
   ): AlternativeSuggestion[] {
     if (grid.length === 0) return [];
-    const slotSize = DateTime.fromISO(grid[0].end, { zone: tz })
-      .diff(DateTime.fromISO(grid[0].start, { zone: tz }), 'minutes')
-      .minutes;
     const base = reqStart.setZone(tz, { keepLocalTime: false });
     const candidates: { start: DateTime; left: number }[] = [];
     for (const slot of grid) {
@@ -142,21 +140,29 @@ export class AvailabilityService {
       cached.turnoverMinutes === cfg.turnoverMinutes &&
       cached.timezone === cfg.timezone
     ) {
-      return cached.slots.map((s) => ({
-        start: s.start,
-        end: s.end,
-        capacity: cfg.capacity,
-        used: cfg.capacity - s.capacityLeft,
-        left: s.capacityLeft,
-        available: s.capacityLeft > 0,
-      }));
+      return cached.slots.map((s) => {
+        const left = typeof s.left === 'number' ? s.left : s.capacityLeft;
+        return {
+          start: s.start,
+          end: s.end,
+          capacity: cfg.capacity,
+          used: cfg.capacity - left,
+          left,
+          available: left > 0,
+        };
+      });
     }
 
     const grid = await this.computeDailyGrid(tenant, dayISO);
     await this.cache.setAvailability(tenant.id, dayISO, {
       tenantId: tenant.id,
       date: dayISO,
-      slots: grid.map((s) => ({ start: s.start, end: s.end, capacityLeft: s.left })),
+      slots: grid.map((s) => ({
+        start: s.start,
+        end: s.end,
+        capacityLeft: s.left,
+        left: s.left,
+      })),
       lastUpdated: new Date().toISOString(),
       capacity: cfg.capacity,
       slotSizeMinutes: cfg.slotSizeMinutes,
@@ -184,17 +190,19 @@ export class AvailabilityService {
     }
 
     const dayISO = formatYMD(input.startAt, tz);
-    const grid = await this.getDailyAvailability(tenant, dayISO);
-    if (grid.length === 0) {
+    const windows = openingWindowsForDate(dayISO, tz, cfg.openingHours, cfg.specialDays);
+    if (windows.length === 0) {
       return { available: false, capacity: cfg.capacity, used: 0, left: cfg.capacity, reason: 'closed' };
     }
+    const grid = await this.getDailyAvailability(tenant, dayISO);
 
     const slotSize = cfg.slotSizeMinutes;
-    const alignedStart = start.minus({
-      minutes: start.minute % slotSize,
-      seconds: start.second,
-      milliseconds: start.millisecond,
-    });
+    let alignedStart = start;
+    for (const s of grid) {
+      const st = DateTime.fromISO(s.start, { zone: tz });
+      if (st <= start) alignedStart = st;
+      else break;
+    }
     const durationMin = end.diff(start, 'minutes').minutes;
     const { ok, left } = this.mergeSlotsToWindow(grid, alignedStart, durationMin, slotSize, tz);
     const used = cfg.capacity - left;
@@ -202,7 +210,7 @@ export class AvailabilityService {
       return { available: true, capacity: cfg.capacity, used, left };
     }
 
-    const alternatives = this.suggestAlternatives(grid, start, durationMin, tz);
+    const alternatives = this.suggestAlternatives(grid, start, durationMin, tz, slotSize);
     return {
       available: false,
       capacity: cfg.capacity,
