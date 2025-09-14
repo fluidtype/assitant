@@ -4,7 +4,11 @@ import { redisConfig } from '../../infrastructure/redis/redis.config.js';
 export interface AvailabilitySlot {
   start: string; // ISO string
   end: string; // ISO string
-  capacityLeft: number;
+  capacityLeft: number; // legacy field (KEEP IT)
+  capacity?: number;
+  used?: number;
+  left?: number; // duplicate of capacityLeft for clarity
+  available?: boolean;
 }
 
 export interface AvailabilityPayload {
