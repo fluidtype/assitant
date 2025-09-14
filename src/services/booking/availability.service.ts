@@ -122,8 +122,8 @@ export class AvailabilityService {
       )
       .slice(0, max);
     return sorted.map((c, i) => ({
-      start: c.start.toISO(),
-      end: c.start.plus({ minutes: durationMin }).toISO(),
+      start: c.start.toISO()!,
+      end: c.start.plus({ minutes: durationMin }).toISO()!,
       left: c.left,
       reason: i === 0 ? 'closest' : c.start < base ? 'shift_earlier' : 'shift_later',
     }));
