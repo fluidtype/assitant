@@ -9,6 +9,7 @@ export interface AvailabilitySlot {
   used?: number;
   left?: number; // duplicate of capacityLeft for clarity
   available?: boolean;
+  overbooked?: boolean;
 }
 
 export interface AvailabilityPayload {

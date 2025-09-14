@@ -27,6 +27,7 @@ export interface AvailabilityCheckInput {
   startAt: Date;
   endAt: Date;
   people: number;
+  excludeId?: string;
 }
 
 export interface AvailabilityCheckResult {
@@ -68,6 +69,7 @@ export interface AvailabilitySlotDetail {
   used: number;
   left: number;
   available: boolean;
+  overbooked: boolean;
 }
 
 export interface AlternativeSuggestion {

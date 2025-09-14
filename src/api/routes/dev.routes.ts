@@ -25,7 +25,9 @@ router.patch('/dev/bookings/:id', async (req: Request, res: Response, next: Next
 
 router.delete('/dev/bookings/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const booking = await service.cancelBooking(req.params.id, req.body?.tenantId);
+    const tenantId = req.body?.tenantId;
+    if (!tenantId) return res.status(400).json({ message: 'tenantId required' });
+    const booking = await service.cancelBooking(req.params.id, tenantId);
     res.json(booking);
   } catch (err) {
     next(err);

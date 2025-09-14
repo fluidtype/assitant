@@ -50,6 +50,14 @@ export class ValidationService {
       },
       tenant,
     );
+    if (dto.userPhone) {
+      const phone = dto.userPhone.trim();
+      if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
+        throw new ValidationError(
+          'Numero di telefono non valido. Aggiungi il prefisso internazionale +39',
+        );
+      }
+    }
   }
 
   validateModify(

@@ -52,13 +52,19 @@ export class BookingRepository {
     });
   }
 
-  async findOverlapping(tenantId: string, startAt: Date, endAt: Date) {
+  async findOverlapping(
+    tenantId: string,
+    startAt: Date,
+    endAt: Date,
+    excludeId?: string,
+  ) {
     return (prisma as any).booking.findMany({
       where: {
         tenantId,
         status: 'confirmed',
         startAt: { lt: endAt },
         endAt: { gt: startAt },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
       },
       select: { id: true, people: true, startAt: true, endAt: true },
     });

@@ -93,57 +93,67 @@ export class BookingService {
     this.validationService.validateModify({ ...dto, patch }, existing, tenant);
 
     const tz = tzOfTenant(tenant);
-    const startAt = toZonedDate(patch.startAtISO ?? existing.startAt.toISOString(), tz);
-    const endAt = toZonedDate(patch.endAtISO ?? existing.endAt.toISOString(), tz);
+    const capacityChange =
+      patch.people !== undefined || patch.startAtISO !== undefined || patch.endAtISO !== undefined;
+    const startAt = capacityChange
+      ? toZonedDate(patch.startAtISO ?? existing.startAt.toISOString(), tz)
+      : existing.startAt;
+    const endAt = capacityChange
+      ? toZonedDate(patch.endAtISO ?? existing.endAt.toISOString(), tz)
+      : existing.endAt;
     const oldDayKey = formatYMD(existing.startAt, tz);
     const newDayKey = formatYMD(startAt, tz);
-    const people = patch.people ?? existing.people;
+    const people = capacityChange ? patch.people ?? existing.people : existing.people;
 
-    const avail = await this.availabilityService.checkAvailability(
-      { tenantId: dto.tenantId, startAt, endAt, people },
-      tenant,
-    );
-    let left = avail.left;
-    if (
-      existing.startAt.getTime() === startAt.getTime() &&
-      existing.endAt.getTime() === endAt.getTime()
-    ) {
-      left += existing.people;
-    }
-    if (!avail.available || left < people) {
-      const err = new ConflictError('Disponibilità insufficiente');
-      (err as any).data = {
-        reason: avail.reason,
-      };
-      if (avail.alternatives?.length) {
-        (err as any).data.alternatives = avail.alternatives;
-      }
-      throw err;
-    }
-
-    const updated = await (prisma as any).$transaction(async (tx: any) => {
-      await pgAdvisoryXactLock(`avail:${dto.tenantId}:${newDayKey}`);
-
-      const again = await this.availabilityService.checkAvailability(
-        { tenantId: dto.tenantId, startAt, endAt, people },
+    if (capacityChange) {
+      const avail = await this.availabilityService.checkAvailability(
+        { tenantId: dto.tenantId, startAt, endAt, people, excludeId: existing.id },
         tenant,
       );
-      let againLeft = again.left;
+      let left = avail.left;
       if (
         existing.startAt.getTime() === startAt.getTime() &&
         existing.endAt.getTime() === endAt.getTime()
       ) {
-        againLeft += existing.people;
+        left += existing.people;
       }
-      if (!again.available || againLeft < people) {
+      if (!avail.available || left < people) {
         const err = new ConflictError('Disponibilità insufficiente');
         (err as any).data = {
-          reason: again.reason,
+          reason: avail.reason,
         };
-        if (again.alternatives?.length) {
-          (err as any).data.alternatives = again.alternatives;
+        if (avail.alternatives?.length) {
+          (err as any).data.alternatives = avail.alternatives;
         }
         throw err;
+      }
+    }
+
+    const updated = await (prisma as any).$transaction(async (tx: any) => {
+      if (capacityChange) {
+        await pgAdvisoryXactLock(`avail:${dto.tenantId}:${newDayKey}`);
+
+        const again = await this.availabilityService.checkAvailability(
+          { tenantId: dto.tenantId, startAt, endAt, people, excludeId: existing.id },
+          tenant,
+        );
+        let againLeft = again.left;
+        if (
+          existing.startAt.getTime() === startAt.getTime() &&
+          existing.endAt.getTime() === endAt.getTime()
+        ) {
+          againLeft += existing.people;
+        }
+        if (!again.available || againLeft < people) {
+          const err = new ConflictError('Disponibilità insufficiente');
+          (err as any).data = {
+            reason: again.reason,
+          };
+          if (again.alternatives?.length) {
+            (err as any).data.alternatives = again.alternatives;
+          }
+          throw err;
+        }
       }
 
       const patchDb: any = {};
@@ -167,9 +177,11 @@ export class BookingService {
       return tx.booking.findFirst({ where: { id: dto.id, tenantId: dto.tenantId } });
     });
 
-    await this.cache.invalidateAvailabilityForDate(tenant.id, oldDayKey);
-    if (newDayKey !== oldDayKey) {
-      await this.cache.invalidateAvailabilityForDate(tenant.id, newDayKey);
+    if (capacityChange) {
+      await this.cache.invalidateAvailabilityForDate(tenant.id, oldDayKey);
+      if (newDayKey !== oldDayKey) {
+        await this.cache.invalidateAvailabilityForDate(tenant.id, newDayKey);
+      }
     }
 
     incrementCounter('booking_modified');

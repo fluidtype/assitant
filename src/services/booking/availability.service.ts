@@ -19,7 +19,11 @@ export class AvailabilityService {
     private readonly cache = new AvailabilityCache(),
   ) {}
 
-  private async computeDailyGrid(tenant: Tenant, dayISO: string): Promise<AvailabilitySlotDetail[]> {
+  private async computeDailyGrid(
+    tenant: Tenant,
+    dayISO: string,
+    excludeId?: string,
+  ): Promise<AvailabilitySlotDetail[]> {
     const cfg = readAvailabilityConfig(tenant);
     const tz = cfg.timezone;
     const slots = buildSlotsForDay(dayISO, tz, cfg.openingHours, cfg.slotSizeMinutes, cfg.specialDays);
@@ -32,6 +36,7 @@ export class AvailabilityService {
       tenant.id,
       dayStart.toJSDate(),
       dayEnd.toJSDate(),
+      excludeId,
     );
 
     interface Occupancy {
@@ -48,11 +53,13 @@ export class AvailabilityService {
 
     const validSlots = slots.filter((s) => s.start && s.end);
     return validSlots.map((slot) => {
-      const used = bookingIntervals.reduce(
+      const usedRaw = bookingIntervals.reduce(
         (sum: number, b: Occupancy) => (b.interval.overlaps(slot) ? sum + b.people : sum),
         0,
       );
-      const left = Math.max(cfg.capacity - used, 0);
+      const overbooked = usedRaw > cfg.capacity;
+      const used = Math.min(usedRaw, cfg.capacity);
+      const left = Math.max(cfg.capacity - usedRaw, 0);
       return {
         start: slot.start!.toISO(),
         end: slot.end!.toISO(),
@@ -60,6 +67,7 @@ export class AvailabilityService {
         used,
         left,
         available: left > 0,
+        overbooked,
       } as AvailabilitySlotDetail;
     });
   }
@@ -98,6 +106,7 @@ export class AvailabilityService {
     durationMin: number,
     tz: string,
     slotSize: number,
+    people: number,
     max = 6,
   ): AlternativeSuggestion[] {
     if (grid.length === 0) return [];
@@ -113,7 +122,9 @@ export class AvailabilityService {
     const uniq = candidates.filter(
       (c, i, arr) => arr.findIndex((o) => o.start.toMillis() === c.start.toMillis()) === i,
     );
-    const sorted = uniq
+    const sufficient = uniq.filter((c) => c.left >= people);
+    const pool = sufficient.length ? sufficient : uniq;
+    const sorted = pool
       .filter((c) => c.start.toMillis() !== base.toMillis())
       .sort(
         (a, b) =>
@@ -142,13 +153,15 @@ export class AvailabilityService {
     ) {
       return cached.slots.map((s) => {
         const left = typeof s.left === 'number' ? s.left : s.capacityLeft;
+        const usedRaw = cfg.capacity - left;
         return {
           start: s.start,
           end: s.end,
           capacity: cfg.capacity,
-          used: cfg.capacity - left,
+          used: Math.min(usedRaw, cfg.capacity),
           left,
           available: left > 0,
+          overbooked: s.overbooked ?? usedRaw > cfg.capacity,
         };
       });
     }
@@ -162,6 +175,7 @@ export class AvailabilityService {
         end: s.end,
         capacityLeft: s.left,
         left: s.left,
+        overbooked: s.overbooked,
       })),
       lastUpdated: new Date().toISOString(),
       capacity: cfg.capacity,
@@ -194,7 +208,9 @@ export class AvailabilityService {
     if (windows.length === 0) {
       return { available: false, capacity: cfg.capacity, used: 0, left: cfg.capacity, reason: 'closed' };
     }
-    const grid = await this.getDailyAvailability(tenant, dayISO);
+    const grid = input.excludeId
+      ? await this.computeDailyGrid(tenant, dayISO, input.excludeId)
+      : await this.getDailyAvailability(tenant, dayISO);
 
     const slotSize = cfg.slotSizeMinutes;
     let alignedStart = start;
@@ -213,7 +229,7 @@ export class AvailabilityService {
     const reason = grid.length === 0 ? 'closed' : 'capacity';
     const alternatives =
       reason === 'capacity'
-        ? this.suggestAlternatives(grid, start, durationMin, tz, slotSize)
+        ? this.suggestAlternatives(grid, start, durationMin, tz, slotSize, input.people)
         : [];
     return {
       available: false,
