@@ -1,27 +1,25 @@
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
-import express from 'express';
 import { AddressInfo } from 'net';
 import { DateTime } from 'luxon';
 
-import apiRouter from '@api/routes/index.js';
-import { tenantMiddleware, errorMiddleware } from '@middleware/index.js';
+import devRoutes from '@api/routes/dev.routes.js';
+import { buildTestApp } from '@test/utils/buildTestApp.js';
 import { prisma } from '@infra/database/prisma.client.js';
 
-let server: any; let baseUrl: string;
+const db = prisma as any;
+
+let server: any;
+let baseUrl: string;
 
 beforeAll(async () => {
-  const app = express();
-  app.use(express.json());
-  app.use(tenantMiddleware);
-  app.use('/', apiRouter);
-  app.use(errorMiddleware);
+  const app = buildTestApp(devRoutes);
   server = app.listen(0);
   const { port } = server.address() as AddressInfo;
-  baseUrl = `http://localhost:${port}`;
+  baseUrl = `http://localhost:${port}/v1`;
 });
 
 afterAll(async () => {
-  await prisma.$disconnect();
+  await db.$disconnect?.();
   await new Promise((resolve) => server.close(resolve));
 });
 
@@ -34,7 +32,7 @@ describe('booking conflict alternatives', () => {
     const dayStart = start.startOf('day').toJSDate();
     const dayEnd = start.endOf('day').toJSDate();
 
-    await prisma.tenant.upsert({
+    await db.tenant.upsert({
       where: { id: TENANT },
       update: {},
       create: {
@@ -49,10 +47,10 @@ describe('booking conflict alternatives', () => {
       },
     });
 
-    await prisma.booking.deleteMany({ where: { tenantId: TENANT, startAt: { gte: dayStart, lt: dayEnd } } });
+    await db.booking.deleteMany({ where: { tenantId: TENANT, startAt: { gte: dayStart, lt: dayEnd } } });
 
     for (let i = 0; i < 6; i++) {
-      await prisma.booking.create({
+      await db.booking.create({
         data: {
           tenantId: TENANT,
           userPhone: null,
@@ -64,7 +62,7 @@ describe('booking conflict alternatives', () => {
       });
     }
 
-    const res = await fetch(`${baseUrl}/v1/dev/bookings`, {
+    const res = await fetch(`${baseUrl}/dev/bookings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

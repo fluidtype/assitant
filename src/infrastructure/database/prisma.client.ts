@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 declare global {
   var __PRISMA_CLIENT__: PrismaClient | undefined;
@@ -15,3 +16,5 @@ export const prisma: PrismaClient =
 if (!isProd) {
   global.__PRISMA_CLIENT__ = prisma;
 }
+
+export type { Prisma };

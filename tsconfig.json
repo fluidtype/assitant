@@ -16,8 +16,11 @@
       "@core/*": ["src/core/*"],
       "@infra/*": ["src/infrastructure/*"],
       "@utils/*": ["src/utils/*"],
-      "@config/*": ["src/config/*"]
-    }
+      "@config/*": ["src/config/*"],
+      "@middleware/*": ["src/middleware/*"],
+      "@test/*": ["src/test/*"]
+    },
+    "types": ["vitest/globals", "node"]
   },
   "exclude": ["prisma", "vitest.config.ts"]
 }

@@ -19,4 +19,5 @@ declare module '@prisma/client' {
     endAt: Date;
     status: string;
   }
+  export namespace Prisma {}
 }
