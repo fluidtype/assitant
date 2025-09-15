@@ -5,6 +5,7 @@ import type OpenAI from 'openai';
 import type { Tenant } from '@prisma/client';
 
 import { config } from '@config/env.config.js';
+import { withRetry } from '@infra/openai/chat.retry.js';
 import { getOpenAI } from '@infra/openai/openai.client.js';
 import { redis } from '@infra/redis/redis.client.js';
 import type { ConversationState } from '@services/cache/conversation-cache.js';
@@ -65,16 +66,18 @@ export class EnhancedNLUService {
     const user = this.buildUserPrompt(message, tenant, timezone, state);
 
     try {
-      const completion = await this.openai.chat.completions.create(
-        {
-          model,
-          temperature,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-        },
-        { timeout: 20000 },
+      const completion = await withRetry(() =>
+        this.openai.chat.completions.create(
+          {
+            model,
+            temperature,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+          },
+          { timeout: 20000 },
+        ),
       );
 
       const raw = (completion.choices?.[0]?.message?.content ?? '')
