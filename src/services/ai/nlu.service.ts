@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { DateTime } from 'luxon';
 import type OpenAI from 'openai';
 
@@ -5,6 +6,7 @@ import type { Tenant } from '@prisma/client';
 
 import { config } from '@config/env.config.js';
 import { getOpenAI } from '@infra/openai/openai.client.js';
+import { redis } from '@infra/redis/redis.client.js';
 import type { ConversationState } from '@services/cache/conversation-cache.js';
 
 import type {
@@ -17,6 +19,9 @@ import type {
   Phone,
   TemporalRef,
 } from './nlu.types.js';
+
+const PROMPT_VERSION = 'nlu:v1';
+const CACHE_TTL_SECONDS = 900;
 
 const INTENT_MAP: Record<string, NLUIntent> = {
   CREATE_BOOKING: 'CREATE_BOOKING',
@@ -43,6 +48,12 @@ export class EnhancedNLUService {
 
   async parse(message: string, state: ConversationState | null, tenant: Tenant): Promise<NLUResult> {
     const startedAt = Date.now();
+    const cacheKey = this.buildCacheKey(message, tenant, state);
+    const cached = await this.tryGetCachedResult(cacheKey, startedAt);
+    if (cached) {
+      return cached;
+    }
+
     const model = config.OPENAI_MODEL ?? process.env.OPENAI_MODEL;
     if (!model) {
       throw new Error('OPENAI_MODEL is not configured');
@@ -80,7 +91,7 @@ export class EnhancedNLUService {
           confidence: 0.2,
           missing: [],
           ambiguity: ['json_parse_error'],
-          trace: { promptVersion: 'nlu:v1', latencyMs: Date.now() - startedAt },
+          trace: { promptVersion: PROMPT_VERSION, latencyMs: Date.now() - startedAt },
         };
       }
 
@@ -90,8 +101,11 @@ export class EnhancedNLUService {
         ...previousTrace,
         model: completion.model ?? previousTrace.model,
         latencyMs: Date.now() - startedAt,
-        promptVersion: 'nlu:v1',
+        promptVersion: PROMPT_VERSION,
       };
+
+      await this.storeCachedResult(cacheKey, normalized);
+
       return normalized;
     } catch {
       return {
@@ -100,13 +114,52 @@ export class EnhancedNLUService {
         confidence: 0.2,
         missing: [],
         ambiguity: ['openai_error'],
-        trace: { promptVersion: 'nlu:v1', latencyMs: Date.now() - startedAt },
+        trace: { promptVersion: PROMPT_VERSION, latencyMs: Date.now() - startedAt },
       };
     }
   }
 
   parseWithContext(message: string, state: ConversationState | null, tenant: Tenant): Promise<NLUResult> {
     return this.parse(message, state, tenant);
+  }
+
+  private buildCacheKey(message: string, tenant: Tenant, state: ConversationState | null): string {
+    const text = message.trim();
+    const tenantId = String(tenant.id);
+    const flow = state?.flow ? String(state.flow) : 'IDLE';
+    const payload = `${text}|${tenantId}|${flow}|${PROMPT_VERSION}`;
+    return `nlu:${sha1(payload)}`;
+  }
+
+  private async tryGetCachedResult(cacheKey: string, startedAt: number): Promise<NLUResult | null> {
+    try {
+      if (!redis.isOpen) {
+        await redis.connect();
+      }
+      const cachedRaw = await redis.get(cacheKey);
+      if (!cachedRaw) return null;
+      const cached = JSON.parse(cachedRaw) as NLUResult;
+      const trace = {
+        ...(cached.trace ?? {}),
+        cache: true,
+        promptVersion: PROMPT_VERSION,
+        latencyMs: Date.now() - startedAt,
+      };
+      return { ...cached, trace };
+    } catch {
+      return null;
+    }
+  }
+
+  private async storeCachedResult(cacheKey: string, result: NLUResult): Promise<void> {
+    try {
+      if (!redis.isOpen) {
+        await redis.connect();
+      }
+      await redis.set(cacheKey, JSON.stringify(result), { EX: CACHE_TTL_SECONDS });
+    } catch {
+      // ignore cache errors
+    }
   }
 
   private resolveTemperature(): number {
@@ -615,4 +668,8 @@ export class EnhancedNLUService {
     }
     return null;
   }
+}
+
+function sha1(str: string): string {
+  return createHash('sha1').update(str).digest('hex');
 }
