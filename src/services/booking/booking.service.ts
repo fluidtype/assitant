@@ -41,6 +41,7 @@ export class BookingService {
       );
       if (!avail.available) {
         const err = new ConflictError('Disponibilità insufficiente');
+        // includi dettagli di disponibilità per il middleware d'errore
         (err as any).data = {
           reason: avail.reason ?? 'capacity',
           alternatives: avail.alternatives ?? [],
@@ -57,6 +58,7 @@ export class BookingService {
         );
         if (!again.available) {
           const err = new ConflictError('Disponibilità insufficiente');
+          // includi dettagli di disponibilità per il middleware d'errore
           (err as any).data = {
             reason: again.reason ?? 'capacity',
             alternatives: again.alternatives ?? [],
@@ -119,6 +121,7 @@ export class BookingService {
       }
         if (!avail.available || left < people) {
           const err = new ConflictError('Disponibilità insufficiente');
+          // includi dettagli di disponibilità per il middleware d'errore
           (err as any).data = {
             reason: avail.reason ?? 'capacity',
             alternatives: avail.alternatives ?? [],
@@ -144,6 +147,7 @@ export class BookingService {
         }
           if (!again.available || againLeft < people) {
             const err = new ConflictError('Disponibilità insufficiente');
+            // includi dettagli di disponibilità per il middleware d'errore
             (err as any).data = {
               reason: again.reason ?? 'capacity',
               alternatives: again.alternatives ?? [],
