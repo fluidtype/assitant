@@ -94,7 +94,7 @@ describe('EnhancedNLUService', () => {
     expect(result.entities.name?.full).toBe('Rossi');
     expect(result.missing).toEqual([]);
     expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(result.trace?.promptVersion).toBe('nlu:v1');
+    expect(result.trace?.promptVersion).toBe('nlu:v2');
   });
 
   it('flags missing booking reference for modify intent', async () => {

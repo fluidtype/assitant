@@ -1,14 +1,16 @@
 import { createHash } from 'crypto';
+
 import { DateTime } from 'luxon';
 import type OpenAI from 'openai';
-
 import type { Tenant } from '@prisma/client';
 
-import { config } from '@config/env.config.js';
+import type { ConversationState } from '@services/cache/conversation-cache.js';
+
 import { withRetry } from '@infra/openai/chat.retry.js';
 import { getOpenAI } from '@infra/openai/openai.client.js';
 import { redis } from '@infra/redis/redis.client.js';
-import type { ConversationState } from '@services/cache/conversation-cache.js';
+
+import { config } from '@config/env.config.js';
 
 import type {
   NLUEntities,
@@ -20,8 +22,9 @@ import type {
   Phone,
   TemporalRef,
 } from './nlu.types.js';
+import { PromptBuilder } from './prompt.builder.js';
 
-const PROMPT_VERSION = 'nlu:v1';
+const PROMPT_VERSION = 'nlu:v2';
 const CACHE_TTL_SECONDS = 900;
 
 const INTENT_MAP: Record<string, NLUIntent> = {
@@ -47,10 +50,18 @@ const INTENT_MAP: Record<string, NLUIntent> = {
 export class EnhancedNLUService {
   constructor(private readonly openai: OpenAI = getOpenAI()) {}
 
-  async parse(message: string, state: ConversationState | null, tenant: Tenant): Promise<NLUResult> {
+  async parse(
+    message: string,
+    state: ConversationState | null,
+    tenant: Tenant,
+  ): Promise<NLUResult> {
     const startedAt = Date.now();
-    const cacheKey = this.buildCacheKey(message, tenant, state);
-    const cached = await this.tryGetCachedResult(cacheKey, startedAt);
+    const builder = new PromptBuilder(tenant, 'it-IT');
+    const prompt = builder.nlu(message, state);
+    const promptVersion = prompt.version ?? PROMPT_VERSION;
+
+    const cacheKey = this.buildCacheKey(message, tenant, state, promptVersion);
+    const cached = await this.tryGetCachedResult(cacheKey, startedAt, promptVersion);
     if (cached) {
       return cached;
     }
@@ -61,9 +72,6 @@ export class EnhancedNLUService {
     }
 
     const temperature = this.resolveTemperature();
-    const timezone = this.getTimezone(tenant);
-    const system = 'You are an Italian NLU parser for WhatsApp restaurant bookings. Return ONLY valid JSON.';
-    const user = this.buildUserPrompt(message, tenant, timezone, state);
 
     try {
       const completion = await withRetry(() =>
@@ -72,8 +80,8 @@ export class EnhancedNLUService {
             model,
             temperature,
             messages: [
-              { role: 'system', content: system },
-              { role: 'user', content: user },
+              { role: 'system', content: prompt.system },
+              { role: 'user', content: prompt.user },
             ],
           },
           { timeout: 20000 },
@@ -94,7 +102,7 @@ export class EnhancedNLUService {
           confidence: 0.2,
           missing: [],
           ambiguity: ['json_parse_error'],
-          trace: { promptVersion: PROMPT_VERSION, latencyMs: Date.now() - startedAt },
+          trace: { promptVersion, latencyMs: Date.now() - startedAt },
         };
       }
 
@@ -104,7 +112,7 @@ export class EnhancedNLUService {
         ...previousTrace,
         model: completion.model ?? previousTrace.model,
         latencyMs: Date.now() - startedAt,
-        promptVersion: PROMPT_VERSION,
+        promptVersion,
       };
 
       await this.storeCachedResult(cacheKey, normalized);
@@ -117,24 +125,38 @@ export class EnhancedNLUService {
         confidence: 0.2,
         missing: [],
         ambiguity: ['openai_error'],
-        trace: { promptVersion: PROMPT_VERSION, latencyMs: Date.now() - startedAt },
+        trace: { promptVersion, latencyMs: Date.now() - startedAt },
       };
     }
   }
 
-  parseWithContext(message: string, state: ConversationState | null, tenant: Tenant): Promise<NLUResult> {
+  parseWithContext(
+    message: string,
+    state: ConversationState | null,
+    tenant: Tenant,
+  ): Promise<NLUResult> {
     return this.parse(message, state, tenant);
   }
 
-  private buildCacheKey(message: string, tenant: Tenant, state: ConversationState | null): string {
+  private buildCacheKey(
+    message: string,
+    tenant: Tenant,
+    state: ConversationState | null,
+    promptVersion: string,
+  ): string {
     const text = message.trim();
     const tenantId = String(tenant.id);
     const flow = state?.flow ? String(state.flow) : 'IDLE';
-    const payload = `${text}|${tenantId}|${flow}|${PROMPT_VERSION}`;
+    const version = promptVersion || PROMPT_VERSION;
+    const payload = `${text}|${tenantId}|${flow}|${version}`;
     return `nlu:${sha1(payload)}`;
   }
 
-  private async tryGetCachedResult(cacheKey: string, startedAt: number): Promise<NLUResult | null> {
+  private async tryGetCachedResult(
+    cacheKey: string,
+    startedAt: number,
+    promptVersion: string,
+  ): Promise<NLUResult | null> {
     try {
       if (!redis.isOpen) {
         await redis.connect();
@@ -145,7 +167,7 @@ export class EnhancedNLUService {
       const trace = {
         ...(cached.trace ?? {}),
         cache: true,
-        promptVersion: PROMPT_VERSION,
+        promptVersion: promptVersion || PROMPT_VERSION,
         latencyMs: Date.now() - startedAt,
       };
       return { ...cached, trace };
@@ -166,7 +188,10 @@ export class EnhancedNLUService {
   }
 
   private resolveTemperature(): number {
-    if (typeof config.OPENAI_TEMPERATURE === 'number' && Number.isFinite(config.OPENAI_TEMPERATURE)) {
+    if (
+      typeof config.OPENAI_TEMPERATURE === 'number' &&
+      Number.isFinite(config.OPENAI_TEMPERATURE)
+    ) {
       return config.OPENAI_TEMPERATURE;
     }
     const env = process.env.OPENAI_TEMPERATURE;
@@ -175,50 +200,6 @@ export class EnhancedNLUService {
       if (!Number.isNaN(parsed)) return parsed;
     }
     return 0.1;
-  }
-
-  private buildUserPrompt(
-    text: string,
-    tenant: Tenant,
-    timezone: string,
-    state: ConversationState | null,
-  ): string {
-    const tenantName = tenant.name ?? tenant.id;
-    const stateLine = state
-      ? `ConversationState: flow=${state.flow}, context=${this.safeStateContext(state.context)}`
-      : 'ConversationState: none';
-
-    return [
-      `Tenant: ${tenantName}`,
-      stateLine,
-      `Timezone: ${timezone}`,
-      `Text: """${text}"""`,
-      'Return ONLY JSON with this exact schema:',
-      '{',
-      '  "intent": "CREATE_BOOKING|MODIFY_BOOKING|CANCEL_BOOKING|ASK_INFO|CONFIRMATION|UNKNOWN",',
-      '  "entities": {',
-      '    "when": {"dateISO": "", "timeISO": "", "raw": "", "granularity": "day|time|partOfDay"},',
-      '    "people": {"value": 0, "raw": ""},',
-      '    "name": {"full": ""},',
-      '    "phone": {"raw": "", "e164": ""},',
-      '    "bookingRef": ""',
-      '  },',
-      '  "confidence": 0.0,',
-      '  "missing": [],',
-      '  "ambiguity": []',
-      '}',
-      'Guidelines:',
-      '- Parse Italian WhatsApp conversations about restaurant bookings.',
-      '- Interpret temporal expressions (oggi, domani, dopodomani, stasera, domani sera, ecc.) in the provided timezone.',
-      '- Leave fields empty or null when information is missing; never invent values.',
-      '- Confidence must be between 0 and 1.',
-      '- If something is missing, list the field name in "missing".',
-      'Examples:',
-      '1. "Domani alle 20 per 4 a nome Rossi"',
-      '2. "Sposta la mia prenotazione di stasera alle 21"',
-      '3. "Annulla prenotazione Marco"',
-      'Respond with JSON only.',
-    ].join('\n');
   }
 
   private normalize(input: unknown, tenant: Tenant): NLUResult {
@@ -242,7 +223,10 @@ export class EnhancedNLUService {
 
   private normalizeIntent(raw: unknown): NLUIntent {
     if (typeof raw !== 'string') return 'UNKNOWN';
-    const key = raw.trim().toUpperCase().replace(/[^A-Z_]/g, '_');
+    const key = raw
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z_]/g, '_');
     return INTENT_MAP[key] ?? 'UNKNOWN';
   }
 
@@ -299,7 +283,8 @@ export class EnhancedNLUService {
       if (typeof obj.timeISO === 'string') ref.timeISO = obj.timeISO;
       else if (typeof obj.timeIso === 'string') ref.timeISO = obj.timeIso;
       else if (typeof obj.time === 'string') ref.timeISO = obj.time;
-      if (typeof obj.granularity === 'string') ref.granularity = this.normalizeGranularity(obj.granularity);
+      if (typeof obj.granularity === 'string')
+        ref.granularity = this.normalizeGranularity(obj.granularity);
     }
 
     const resolvedDate = this.resolveDate(ref, timezone);
@@ -417,7 +402,9 @@ export class EnhancedNLUService {
 
   private normalizeStringArray(input: unknown): string[] {
     if (!Array.isArray(input)) return [];
-    const arr = input.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    const arr = input.filter(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    );
     return arr.map((value) => value.trim());
   }
 
@@ -637,18 +624,6 @@ export class EnhancedNLUService {
 
   private isLikelyItalianSubscriber(value: string): boolean {
     return value.length >= 5 && value.length <= 11;
-  }
-
-  private safeStateContext(context: unknown): string {
-    if (context === undefined) return 'undefined';
-    try {
-      const serialized = JSON.stringify(context);
-      if (!serialized) return 'null';
-      return serialized.length > 400 ? `${serialized.slice(0, 400)}…` : serialized;
-    } catch {
-      const text = String(context);
-      return text.length > 200 ? `${text.slice(0, 200)}…` : text;
-    }
   }
 
   private getTimezone(tenant: Tenant): string {
