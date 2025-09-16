@@ -74,6 +74,7 @@ describe('ResponseGenerator', () => {
     expect(result.quick_replies).toEqual(['Vedi altri orari']);
     expect(result.quick_replies?.length).toBeLessThanOrEqual(3);
     expect(result.trace?.promptVersion).toBe('resp:v1');
+    expect(result.trace?.brand).toBe('Ristorante Aurora');
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
@@ -102,6 +103,7 @@ describe('ResponseGenerator', () => {
     expect(result.quick_replies).toEqual(['19:30', '20:00', '20:30']);
     expect(result.quick_replies?.length ?? 0).toBeLessThanOrEqual(3);
     expect(result.trace?.fallback).toBe(true);
+    expect(result.trace?.brand).toBe('Ristorante Aurora');
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 

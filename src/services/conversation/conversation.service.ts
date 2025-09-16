@@ -45,6 +45,10 @@ export class ConversationService {
     const persisted = await getState(event.tenantId, event.userPhone);
     const expectedVersion = persisted ? persisted.version : null;
     const currentState = persisted ?? newEmptyState();
+    const previousContextSnapshot: ConversationState['context'] | undefined = currentState.context
+      ? { ...currentState.context }
+      : undefined;
+    const previousFlow = currentState.flow;
 
     const threshold = await getAdaptiveThreshold(event.tenantId);
     const stateMachine = new ConversationStateMachine(this.ttlMinutes, threshold);
@@ -101,6 +105,17 @@ export class ConversationService {
     if (!reply) {
       reply = await this.responder.byKey(tenant, 'generic_fallback');
     }
+
+    const contextDiff = this.computeContextDiff(previousContextSnapshot, nextState.context);
+    logger.info('[conv]', {
+      traceId: event.messageId,
+      tenantId: event.tenantId,
+      phone: event.userPhone,
+      from: previousFlow,
+      to: nextState.flow,
+      event: reduceEvent.type,
+      diff: Object.keys(contextDiff).length > 0 ? contextDiff : undefined,
+    });
 
     nextState.version = (currentState.version ?? 0) + 1;
     const cas = await setStateCAS(event.tenantId, event.userPhone, nextState, expectedVersion);
@@ -242,6 +257,66 @@ export class ConversationService {
       return err as Record<string, unknown>;
     }
     return { message: String(err) };
+  }
+
+  private computeContextDiff(
+    before: ConversationState['context'] | undefined,
+    after: ConversationState['context'] | undefined,
+  ): Record<string, { before: unknown; after: unknown }> {
+    const beforeSafe = (before ?? {}) as Record<string, unknown>;
+    const afterSafe = (after ?? {}) as Record<string, unknown>;
+    const diff: Record<string, { before: unknown; after: unknown }> = {};
+    const keys = new Set([...Object.keys(beforeSafe), ...Object.keys(afterSafe)]);
+    for (const key of keys) {
+      const prev = beforeSafe[key];
+      const next = afterSafe[key];
+      if (this.areContextValuesEqual(prev, next)) {
+        continue;
+      }
+      diff[key] = {
+        before: this.sanitizeContextValue(prev),
+        after: this.sanitizeContextValue(next),
+      };
+    }
+    return diff;
+  }
+
+  private areContextValuesEqual(a: unknown, b: unknown): boolean {
+    if (a === b) {
+      return true;
+    }
+    if (a === null || b === null || a === undefined || b === undefined) {
+      return false;
+    }
+    if (typeof a === 'object' && typeof b === 'object') {
+      try {
+        return JSON.stringify(a) === JSON.stringify(b);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  private sanitizeContextValue(value: unknown): unknown {
+    if (value === null || value === undefined) {
+      return value;
+    }
+    if (typeof value === 'object') {
+      if (Array.isArray(value)) {
+        return value.slice(0, 5).map((item) => (typeof item === 'object' ? '[object]' : item));
+      }
+      const obj = value as Record<string, unknown>;
+      if ('intent' in obj || 'confidence' in obj || 'missing' in obj) {
+        return {
+          intent: obj.intent,
+          confidence: obj.confidence,
+          missing: obj.missing,
+        };
+      }
+      return '[object]';
+    }
+    return value;
   }
 
   private async tryHandleDevCommand(message: string): Promise<{ replyText: string } | null> {

@@ -57,15 +57,38 @@ const MESSAGE_KEYS = [
   'cancelled_ok',
   'generic_fallback',
   'generic_error',
+  'fallback_missing',
 ] as const;
 
 type MessageKey = (typeof MESSAGE_KEYS)[number];
+
+type BrandMessages = Partial<Record<'it' | 'en', Partial<Record<MessageKey, string>>>>;
+
+type BrandOverrides = {
+  displayName?: string;
+  emoji?: string;
+  messages?: BrandMessages;
+};
+
+type ResolvedBrand = {
+  displayName: string;
+  emoji?: string;
+  messages: BrandMessages;
+};
+
+const TENANT_BRAND_OVERRIDES: Record<string, BrandOverrides> = {
+  'demo-tenant-aurora': {
+    displayName: 'Ristorante Aurora',
+    emoji: '🌅',
+  },
+};
 
 export class ResponseGenerator {
   constructor(private readonly openai: OpenAI = getOpenAI()) {}
 
   async generate(options: GenerateOptions): Promise<GeneratedReply> {
     const locale = this.resolveLocaleFromTenant(options.tenant);
+    const brand = this.resolveBranding(options.tenant);
     const builder = new PromptBuilder(options.tenant, locale);
     const prompt = builder.response({
       intent: options.intent,
@@ -105,6 +128,7 @@ export class ResponseGenerator {
         payload = JSON.parse(raw);
       } catch {
         return this.buildFallback(
+          options.tenant,
           options.missing,
           prompt.version,
           Date.now() - startedAt,
@@ -116,6 +140,7 @@ export class ResponseGenerator {
       const reply = this.normalizePayload(payload);
       if (!reply) {
         return this.buildFallback(
+          options.tenant,
           options.missing,
           prompt.version,
           Date.now() - startedAt,
@@ -128,11 +153,13 @@ export class ResponseGenerator {
         promptVersion: prompt.version,
         model: completion.model,
         latencyMs: Date.now() - startedAt,
+        brand: brand.displayName,
       };
 
       return { ...reply, trace };
     } catch {
       return this.buildFallback(
+        options.tenant,
         options.missing,
         prompt.version,
         Date.now() - startedAt,
@@ -146,7 +173,7 @@ export class ResponseGenerator {
     const locale = this.resolveLocaleFromTenant(tenant);
     const lang = this.resolveLanguage(locale);
     if (!Array.isArray(fields) || fields.length === 0) {
-      return this.localizedMessage('generic_fallback', lang);
+      return this.localizedMessage('generic_fallback', lang, tenant);
     }
 
     const normalized = fields
@@ -154,7 +181,7 @@ export class ResponseGenerator {
       .filter((value) => value.length > 0);
 
     if (normalized.length === 0) {
-      return this.localizedMessage('generic_fallback', lang);
+      return this.localizedMessage('generic_fallback', lang, tenant);
     }
 
     const list = this.formatList(normalized, locale);
@@ -166,7 +193,7 @@ export class ResponseGenerator {
   async byKey(tenant: Tenant, key: MessageKey | string): Promise<string> {
     const locale = this.resolveLocaleFromTenant(tenant);
     const lang = this.resolveLanguage(locale);
-    return this.localizedMessage((key as MessageKey) ?? 'generic_fallback', lang);
+    return this.localizedMessage((key as MessageKey) ?? 'generic_fallback', lang, tenant);
   }
 
   async propose(
@@ -316,6 +343,7 @@ export class ResponseGenerator {
   }
 
   private buildFallback(
+    tenant: Tenant,
     missing: string[],
     promptVersion: string,
     latencyMs: number,
@@ -323,14 +351,17 @@ export class ResponseGenerator {
     locale: string,
   ): GeneratedReply {
     const quickReplies = this.suggestQuickReplies(missing, locale);
+    const lang = this.resolveLanguage(locale);
+    const brand = this.resolveBranding(tenant);
 
     const reply: GeneratedReply = {
-      text: 'Scusa, puoi confermarmi i dettagli mancanti?',
+      text: this.localizedMessage('fallback_missing', lang, tenant),
       trace: {
         promptVersion,
         fallback: true,
         reason,
         latencyMs,
+        brand: brand.displayName,
       },
     };
 
@@ -386,6 +417,15 @@ export class ResponseGenerator {
     return resolveLocale('it-IT');
   }
 
+  private resolveBranding(tenant: Tenant): ResolvedBrand {
+    const overrides = TENANT_BRAND_OVERRIDES[tenant.id] ?? {};
+    return {
+      displayName: overrides.displayName ?? tenant.name ?? 'Tom',
+      emoji: overrides.emoji,
+      messages: overrides.messages ?? {},
+    };
+  }
+
   private resolveTimezoneFromTenant(tenant?: Tenant): string {
     if (tenant?.timezone && typeof tenant.timezone === 'string') {
       return tenant.timezone;
@@ -430,6 +470,24 @@ export class ResponseGenerator {
     return DEFAULT_DURATION_MINUTES;
   }
 
+  private applyBrandTemplate(message: string, brand?: ResolvedBrand): string {
+    if (!brand) {
+      return message;
+    }
+    if (!message.includes('{{')) {
+      return message;
+    }
+    const brandName = brand.displayName ?? '';
+    const emoji = brand.emoji ?? '';
+    let output = message
+      .replace(/\{\{\s*brand\s*\}\}/gi, brandName)
+      .replace(/\{\{\s*emoji\s*\}\}/gi, emoji);
+    if (!emoji) {
+      output = output.replace(/\s{2,}/g, ' ').trim();
+    }
+    return output;
+  }
+
   private describeField(field: string, lang: 'it' | 'en'): string {
     const normalized = field.toLowerCase();
     const map: Record<string, { it: string; en: string }> = {
@@ -454,7 +512,7 @@ export class ResponseGenerator {
     return locale.toLowerCase().startsWith('en') ? 'en' : 'it';
   }
 
-  private localizedMessage(key: MessageKey | string, lang: 'it' | 'en'): string {
+  private localizedMessage(key: MessageKey | string, lang: 'it' | 'en', tenant?: Tenant): string {
     const messages: Record<'it' | 'en', Record<MessageKey, string>> = {
       it: {
         timeout_reset: 'Ho azzerato la conversazione per sicurezza. Ripartiamo pure!',
@@ -468,6 +526,7 @@ export class ResponseGenerator {
         cancelled_ok: 'Ho annullato la richiesta. Se ti serve altro sono qui.',
         generic_fallback: 'Dimmi pure come posso aiutarti con la prenotazione.',
         generic_error: "C'è stato un problema inatteso, puoi riprovare tra poco?",
+        fallback_missing: 'Scusa, puoi confermarmi i dettagli mancanti?',
       },
       en: {
         timeout_reset: "I reset the conversation just to be safe. Let's start again!",
@@ -480,14 +539,21 @@ export class ResponseGenerator {
         cancelled_ok: 'All right, I cancelled that for you. Anything else?',
         generic_fallback: 'Let me know how I can help with your booking.',
         generic_error: 'Something unexpected happened, could you try again in a moment?',
+        fallback_missing: 'Sorry, could you confirm the missing details?',
       },
     };
 
+    const brand = tenant ? this.resolveBranding(tenant) : undefined;
+    const overrides = brand?.messages?.[lang] ?? {};
+
     if (MESSAGE_KEYS.includes(key as MessageKey)) {
-      return messages[lang][key as MessageKey];
+      const messageKey = key as MessageKey;
+      const template = overrides[messageKey] ?? messages[lang][messageKey];
+      return this.applyBrandTemplate(template, brand);
     }
 
-    return messages[lang].generic_fallback;
+    const fallbackTemplate = overrides.generic_fallback ?? messages[lang].generic_fallback;
+    return this.applyBrandTemplate(fallbackTemplate, brand);
   }
 
   private describeProposal(
