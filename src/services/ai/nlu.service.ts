@@ -287,28 +287,58 @@ export class EnhancedNLUService {
         ref.granularity = this.normalizeGranularity(obj.granularity);
     }
 
-    const resolvedDate = this.resolveDate(ref, timezone);
-    if (resolvedDate) ref.dateISO = resolvedDate;
-    else delete ref.dateISO;
-
-    const resolvedTime = this.resolveTime(ref.timeISO, timezone);
-    if (resolvedTime) ref.timeISO = resolvedTime;
-    else delete ref.timeISO;
-
     const rawText = ref.raw ?? '';
+    const isRelative = this.hasRelativeKeyword(rawText);
+
+    if (isRelative) {
+      const relDate = this.resolveRelativeDate(rawText, timezone);
+      if (relDate) {
+        ref.dateISO = relDate;
+      } else {
+        delete ref.dateISO;
+      }
+    } else {
+      const resolved = this.resolveDate(ref, timezone);
+      if (resolved) {
+        ref.dateISO = resolved;
+      } else {
+        delete ref.dateISO;
+      }
+    }
+
+    let timeCandidate: string | undefined =
+      typeof ref.timeISO === 'string' ? ref.timeISO : undefined;
+    if (!timeCandidate && rawText) {
+      timeCandidate = this.extractTimeCandidate(rawText);
+    }
+
+    const resolvedTime = this.resolveTime(timeCandidate, timezone);
+    if (resolvedTime) {
+      ref.timeISO = resolvedTime;
+    } else {
+      delete ref.timeISO;
+    }
+
     const hasPartOfDay = this.containsPartOfDay(rawText);
-    if (!ref.timeISO && hasPartOfDay) {
-      ref.granularity = 'partOfDay';
-    } else if (ref.timeISO) {
-      ref.granularity = 'time';
+    let granularity: TemporalRef['granularity'] | undefined;
+    if (ref.timeISO) {
+      granularity = 'time';
+    } else if (hasPartOfDay) {
+      granularity = 'partOfDay';
     } else if (ref.dateISO) {
-      ref.granularity = 'day';
-    } else if (!ref.granularity) {
+      granularity = 'day';
+    }
+
+    if (granularity) {
+      ref.granularity = granularity;
+    } else {
       delete ref.granularity;
     }
 
-    if (ref.raw) ref.raw = ref.raw.trim();
-    if (ref.raw === '') delete ref.raw;
+    if (ref.raw) {
+      ref.raw = ref.raw.trim();
+      if (ref.raw === '') delete ref.raw;
+    }
 
     return Object.keys(ref).length ? ref : undefined;
   }
@@ -444,11 +474,34 @@ export class EnhancedNLUService {
   }
 
   private resolveDate(ref: TemporalRef, timezone: string): string | undefined {
-    const candidates = [ref.dateISO, ref.raw];
+    let now = DateTime.now().setZone(timezone);
+    if (!now.isValid) {
+      now = DateTime.now().setZone('Europe/Rome');
+    }
+    const today = now.startOf('day');
+
+    const candidates: string[] = [];
+    if (typeof ref.dateISO === 'string') candidates.push(ref.dateISO);
+    if (typeof ref.raw === 'string') candidates.push(ref.raw);
+
     for (const candidate of candidates) {
       const normalized = this.normalizeDateString(candidate, timezone);
-      if (normalized) return normalized;
+      if (!normalized) continue;
+
+      const dt = DateTime.fromISO(normalized, { zone: timezone }).startOf('day');
+      if (!dt.isValid) continue;
+
+      const includesYear = /\d{4}/.test(candidate);
+      if (!includesYear) {
+        const diff = today.diff(dt, 'days').days;
+        if (diff > 370) {
+          continue;
+        }
+      }
+
+      return normalized;
     }
+
     return undefined;
   }
 
@@ -457,31 +510,43 @@ export class EnhancedNLUService {
     const trimmed = value.trim();
     if (!trimmed) return undefined;
 
-    const iso = DateTime.fromISO(trimmed, { zone: timezone });
-    if (iso.isValid) {
-      const isoDate = iso.toISODate();
-      if (isoDate) return isoDate;
+    const candidates = new Set<string>();
+    candidates.add(trimmed);
+    const inlineMatch = trimmed.match(/(\d{1,2}[/.-]\d{1,2}(?:[/.-]\d{2,4})?)/);
+    if (inlineMatch) {
+      candidates.add(inlineMatch[1]);
     }
 
-    const formats = ['d/M/yyyy', 'd/M/yy', 'd-M-yyyy', 'd-M-yy', 'd.M.yyyy', 'd.M.yy'];
-    for (const fmt of formats) {
-      const dt = DateTime.fromFormat(trimmed, fmt, { zone: timezone, locale: 'it' });
-      if (dt.isValid) {
-        const isoDate = dt.toISODate();
+    for (const candidate of candidates) {
+      const iso = DateTime.fromISO(candidate, { zone: timezone });
+      if (iso.isValid) {
+        const isoDate = iso.toISODate();
         if (isoDate) return isoDate;
+      }
+
+      const formats = ['d/M/yyyy', 'd/M/yy', 'd-M-yyyy', 'd-M-yy', 'd.M.yyyy', 'd.M.yy'];
+      for (const fmt of formats) {
+        const dt = DateTime.fromFormat(candidate, fmt, { zone: timezone, locale: 'it' });
+        if (dt.isValid) {
+          const isoDate = dt.toISODate();
+          if (isoDate) return isoDate;
+        }
+      }
+
+      const shortFormats = ['d/M', 'd-M', 'd.M'];
+      for (const fmt of shortFormats) {
+        const dt = DateTime.fromFormat(candidate, fmt, { zone: timezone, locale: 'it' });
+        if (dt.isValid) {
+          const year = DateTime.now().setZone(timezone);
+          const isoDate = dt
+            .set({ year: year.isValid ? year.year : DateTime.now().year })
+            .toISODate();
+          if (isoDate) return isoDate;
+        }
       }
     }
 
-    const shortFormats = ['d/M', 'd-M', 'd.M'];
-    for (const fmt of shortFormats) {
-      const dt = DateTime.fromFormat(trimmed, fmt, { zone: timezone, locale: 'it' });
-      if (dt.isValid) {
-        const isoDate = dt.set({ year: DateTime.now().setZone(timezone).year }).toISODate();
-        if (isoDate) return isoDate;
-      }
-    }
-
-    return this.resolveRelativeDate(trimmed, timezone);
+    return undefined;
   }
 
   private resolveRelativeDate(value: string | undefined, timezone: string): string | undefined {
@@ -530,6 +595,36 @@ export class EnhancedNLUService {
     return undefined;
   }
 
+  private extractTimeCandidate(raw: string): string | undefined {
+    if (!raw) return undefined;
+    const normalized = this.normalizeText(raw);
+    if (!normalized) return undefined;
+
+    const indicatorMatch = normalized.match(
+      /(?:alle|all'|ore|verso|intorno alle|per\s+le|per\s+le\s+ore|h)\s*(\d{1,2})(?:[:.](\d{2}))?/,
+    );
+    if (indicatorMatch) {
+      const hours = indicatorMatch[1];
+      const minutes = indicatorMatch[2];
+      return minutes ? `${hours}:${minutes}` : hours;
+    }
+
+    const colonMatch = raw.match(/\b(\d{1,2})[:.](\d{2})\b/);
+    if (colonMatch) {
+      const [, hour, minute] = colonMatch;
+      return `${hour}:${minute}`;
+    }
+
+    const hourWithPeriod = normalized.match(
+      /\b(\d{1,2})\s*(?:di\s+(?:sera|notte|pomeriggio|mattina))\b/,
+    );
+    if (hourWithPeriod) {
+      return hourWithPeriod[1];
+    }
+
+    return undefined;
+  }
+
   private resolveTime(value: string | undefined, timezone: string): string | undefined {
     if (!value) return undefined;
     const trimmed = value.trim();
@@ -566,6 +661,17 @@ export class EnhancedNLUService {
       return 'partOfDay';
     }
     return undefined;
+  }
+
+  private hasRelativeKeyword(raw?: string): boolean {
+    if (!raw) return false;
+    const normalized = this.normalizeText(raw);
+    if (!normalized) return false;
+    return (
+      /(oggi|domani|dopodomani|dopo\s+domani|ieri|stasera|serata|sera|notte|mattina|pomeriggio|pranzo)/.test(
+        normalized,
+      ) || /(?:tra|fra)\s+\d{1,2}\s+giorni?/.test(normalized)
+    );
   }
 
   private containsPartOfDay(raw: string): boolean {

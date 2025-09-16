@@ -60,20 +60,30 @@ export class PromptBuilder {
     );
     userLines.push('- List any missing information in the "missing" array.');
     userLines.push('- Confidence must be a number between 0 and 1.');
-    userLines.push(
-      '- Resolve Italian relative temporal expressions ("oggi", "domani", "dopodomani", "stasera", "domani sera", "tra due ore", "a pranzo", "in serata") into dateISO/timeISO using the tenant timezone.',
-    );
-    userLines.push(
-      '- If only a part of the day is specified (es. "a cena", "a pranzo"), set granularity="partOfDay" and omit timeISO.',
-    );
     userLines.push('- If data is uncertain, leave the field empty and include it in "missing".');
     userLines.push('- Phone numbers should include the +39 prefix when possible.');
-    userLines.push('Examples:');
+    userLines.push('Guidelines:');
     userLines.push(
-      'Input: "Domani alle 20 per 4 a nome Rossi" -> {"intent":"CREATE_BOOKING","confidence":0.85,"entities":{"when":{"dateISO":"2024-05-02","timeISO":"20:00"},"people":{"value":4},"name":{"full":"Rossi"}},"missing":[],"ambiguity":[]}',
+      '- Do NOT fabricate absolute dates for relative expressions (oggi, domani, dopodomani, stasera, ecc.).',
     );
     userLines.push(
-      'Input: "Siete aperti domani?" -> {"intent":"ASK_INFO","confidence":0.6,"entities":{},"missing":[],"ambiguity":[]}',
+      '- For relative time, set entities.when.raw only (es. "domani alle 20") and leave dateISO/timeISO empty.',
+    );
+    userLines.push(
+      '- Confidence between 0 and 1. Never invent fields. If missing, add to "missing".',
+    );
+    userLines.push('Examples (JSON schema only, placeholders, no fixed dates):');
+    userLines.push('1) "Domani alle 20 per 4 a nome Rossi"');
+    userLines.push(
+      '   -> {"intent":"CREATE_BOOKING","entities":{"when":{"raw":"domani alle 20"},"people":{"value":4},"name":{"full":"Rossi"}},"confidence":0.9,"missing":[]}',
+    );
+    userLines.push('2) "Sposta a domani alle 21"');
+    userLines.push(
+      '   -> {"intent":"MODIFY_BOOKING","entities":{"when":{"raw":"domani alle 21"}},"confidence":0.9,"missing":["bookingRef"]}',
+    );
+    userLines.push('3) "Domani sera per 2"');
+    userLines.push(
+      '   -> {"intent":"CREATE_BOOKING","entities":{"when":{"raw":"domani sera"},"people":{"value":2}},"confidence":0.9,"missing":["name","time"]}',
     );
     userLines.push('Respond only with the final JSON object.');
 
