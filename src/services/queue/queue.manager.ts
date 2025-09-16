@@ -1,5 +1,9 @@
 import { Queue, Worker, Job, type ConnectionOptions } from 'bullmq';
 
+import { scanAndTimeout } from '@services/conversation/timeout.worker.js';
+
+import { logger } from '@utils/logger.js';
+
 import { config } from '@config/env.config';
 
 import type { WAEvent } from '../../types/index.js';
@@ -8,6 +12,7 @@ import { MessageProcessor } from './message.processor.js';
 
 let queue: Queue<WAEvent> | undefined;
 let worker: Worker<WAEvent> | undefined;
+let timeoutInterval: NodeJS.Timeout | undefined;
 
 function createConnection(): ConnectionOptions {
   return { url: config.REDIS_URL } as ConnectionOptions;
@@ -29,6 +34,20 @@ export function startQueue(): void {
       settings: { retryProcessDelay: 0 } as any,
     },
   );
+
+  if (process.env.NODE_ENV !== 'production' && !timeoutInterval) {
+    timeoutInterval = setInterval(
+      () => {
+        scanAndTimeout().catch((err) => {
+          logger.error('[timeout] scan failed', { err });
+        });
+      },
+      5 * 60 * 1000,
+    );
+    if (typeof timeoutInterval.unref === 'function') {
+      timeoutInterval.unref();
+    }
+  }
 }
 
 export function enqueue(data: WAEvent) {
