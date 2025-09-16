@@ -1,6 +1,9 @@
 import { DateTime } from 'luxon';
 
+import { logger } from '@utils/logger.js';
+
 import type { ConversationEvent, ConversationState, PendingAction } from './state.types.js';
+import { assertInvariants } from './invariants.js';
 import { newPendingId } from './state-store.js';
 
 export interface Effect {
@@ -177,13 +180,20 @@ export class ConversationStateMachine {
             expiresAt: expiresInMinutes(this.ttlMinutes),
           };
 
+          const nextState: ConversationState = {
+            ...s,
+            flow: 'CONFIRMING_ACTION',
+            context: ctx,
+            pendingAction: pending,
+          };
+
+          const issues = assertInvariants(nextState);
+          if (issues.length) {
+            return this.handleInvariantFailure(nextState, ctx, warnings, issues);
+          }
+
           return {
-            state: {
-              ...s,
-              flow: 'CONFIRMING_ACTION',
-              context: ctx,
-              pendingAction: pending,
-            },
+            state: nextState,
             effects: [
               {
                 type: 'PROPOSE_BOOKING',
@@ -220,13 +230,20 @@ export class ConversationStateMachine {
             expiresAt: expiresInMinutes(this.ttlMinutes),
           };
 
+          const nextState: ConversationState = {
+            ...s,
+            flow: 'CONFIRMING_ACTION',
+            context: ctx,
+            pendingAction: pending,
+          };
+
+          const issues = assertInvariants(nextState);
+          if (issues.length) {
+            return this.handleInvariantFailure(nextState, ctx, warnings, issues);
+          }
+
           return {
-            state: {
-              ...s,
-              flow: 'CONFIRMING_ACTION',
-              context: ctx,
-              pendingAction: pending,
-            },
+            state: nextState,
             effects: [
               {
                 type: 'PROPOSE_BOOKING',
@@ -262,13 +279,20 @@ export class ConversationStateMachine {
             expiresAt: expiresInMinutes(this.ttlMinutes),
           };
 
+          const nextState: ConversationState = {
+            ...s,
+            flow: 'CONFIRMING_ACTION',
+            context: ctx,
+            pendingAction: pending,
+          };
+
+          const issues = assertInvariants(nextState);
+          if (issues.length) {
+            return this.handleInvariantFailure(nextState, ctx, warnings, issues);
+          }
+
           return {
-            state: {
-              ...s,
-              flow: 'CONFIRMING_ACTION',
-              context: ctx,
-              pendingAction: pending,
-            },
+            state: nextState,
             effects: [
               {
                 type: 'PROPOSE_BOOKING',
@@ -293,6 +317,11 @@ export class ConversationStateMachine {
   }
 
   private confirmPending(state: ConversationState, warnings: string[]): ReduceResult {
+    const issues = assertInvariants(state);
+    if (issues.length) {
+      return this.handleInvariantFailure(state, state.context, warnings, issues);
+    }
+
     const pending = state.pendingAction;
     if (!pending) {
       return {
@@ -342,5 +371,29 @@ export class ConversationStateMachine {
       return state.pendingAction.proposal.tenantId;
     }
     return '';
+  }
+
+  private handleInvariantFailure(
+    baseState: ConversationState,
+    ctx: ConversationState['context'],
+    warnings: string[],
+    issues: string[],
+  ): ReduceResult {
+    warnings.push(...issues);
+    logger.warn('[conv] invariant violation', {
+      issues,
+      flow: baseState.flow,
+      pendingActionId: baseState.pendingAction?.id,
+    });
+    return {
+      state: {
+        ...baseState,
+        flow: 'GATHERING_INFO',
+        context: ctx,
+        pendingAction: undefined,
+      },
+      effects: [{ type: 'RESPOND_TEXT', payload: { key: 'missing_fields' } }],
+      warnings,
+    };
   }
 }
