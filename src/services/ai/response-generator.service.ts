@@ -6,6 +6,7 @@ import { getOpenAI } from '@infra/openai/openai.client.js';
 
 import { config } from '@config/env.config.js';
 
+import { getFallbackQuickReplies } from './i18n.js';
 import { PromptBuilder } from './prompt.builder.js';
 
 type GenerateOptions = {
@@ -31,7 +32,8 @@ export class ResponseGenerator {
   constructor(private readonly openai: OpenAI = getOpenAI()) {}
 
   async generate(options: GenerateOptions): Promise<GeneratedReply> {
-    const builder = new PromptBuilder(options.tenant, 'it-IT');
+    const locale = this.resolveLocaleFromTenant(options.tenant);
+    const builder = new PromptBuilder(options.tenant, locale);
     const prompt = builder.response({
       intent: options.intent,
       entities: options.entities ?? {},
@@ -74,6 +76,7 @@ export class ResponseGenerator {
           prompt.version,
           Date.now() - startedAt,
           'json_parse_error',
+          locale,
         );
       }
 
@@ -84,6 +87,7 @@ export class ResponseGenerator {
           prompt.version,
           Date.now() - startedAt,
           'invalid_payload',
+          locale,
         );
       }
 
@@ -100,6 +104,7 @@ export class ResponseGenerator {
         prompt.version,
         Date.now() - startedAt,
         'openai_error',
+        locale,
       );
     }
   }
@@ -160,8 +165,9 @@ export class ResponseGenerator {
     promptVersion: string,
     latencyMs: number,
     reason: string,
+    locale: string,
   ): GeneratedReply {
-    const quickReplies = this.suggestQuickReplies(missing);
+    const quickReplies = this.suggestQuickReplies(missing, locale);
 
     const reply: GeneratedReply = {
       text: 'Scusa, puoi confermarmi i dettagli mancanti?',
@@ -180,7 +186,7 @@ export class ResponseGenerator {
     return reply;
   }
 
-  private suggestQuickReplies(missing: string[]): string[] {
+  private suggestQuickReplies(missing: string[], locale: string): string[] {
     if (!Array.isArray(missing) || missing.length === 0) {
       return [];
     }
@@ -192,7 +198,7 @@ export class ResponseGenerator {
     }
 
     if (normalized.includes('when')) {
-      return ['Oggi', 'Domani', 'Questo weekend'];
+      return getFallbackQuickReplies('when', locale);
     }
 
     if (normalized.includes('people')) {
@@ -212,5 +218,16 @@ export class ResponseGenerator {
     }
 
     return [];
+  }
+
+  private resolveLocaleFromTenant(tenant: Tenant): string {
+    const raw = tenant?.config;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const locale = (raw as Record<string, unknown>).locale;
+      if (typeof locale === 'string' && locale.trim().length > 0) {
+        return locale;
+      }
+    }
+    return 'it-IT';
   }
 }

@@ -103,4 +103,33 @@ describe('ResponseGenerator', () => {
     expect(result.trace?.fallback).toBe(true);
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
+
+  it('localizes missing date quick replies based on tenant locale', async () => {
+    mockCreate.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: 'still-not-json',
+          },
+        },
+      ],
+      model: 'gpt-test',
+    });
+
+    const generator = new ResponseGenerator(mockOpenAI as unknown as OpenAI);
+    const englishTenant = {
+      ...tenant,
+      config: { ...(tenant.config as Record<string, unknown>), locale: 'en-US' },
+    } as unknown as Tenant;
+
+    const result = await generator.generate({
+      tenant: englishTenant,
+      intent: 'CREATE_BOOKING',
+      entities: {},
+      missing: ['when'],
+      context: { state: 'COLLECTING_DETAILS' },
+    });
+
+    expect(result.quick_replies).toEqual(['Tonight', 'Tomorrow', 'See more times']);
+  });
 });

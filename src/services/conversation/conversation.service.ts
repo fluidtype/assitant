@@ -4,6 +4,7 @@ import { prisma } from '@infra/database/prisma.client.js';
 
 import type { WAEvent } from '../../types/index.js';
 import { EnhancedNLUService, ResponseGenerator } from '../ai/index.js';
+import { getAdaptiveThreshold } from '../ai/nlu.threshold.js';
 import { BookingService } from '../booking/booking.service.js';
 
 export class ConversationService {
@@ -21,8 +22,9 @@ export class ConversationService {
         if (tenant) {
           const state = null;
           const nlu = await new EnhancedNLUService().parse(msg, state, tenant);
+          const threshold = await getAdaptiveThreshold(tenant.id);
 
-          if (nlu.confidence < 0.6 || (nlu.missing?.length ?? 0) > 0) {
+          if (nlu.confidence < threshold || (nlu.missing?.length ?? 0) > 0) {
             const entities = (nlu.entities ?? {}) as Record<string, unknown>;
             const missing = nlu.missing ?? [];
             const reply = await new ResponseGenerator().generate({
