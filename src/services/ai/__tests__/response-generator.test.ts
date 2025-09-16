@@ -1,4 +1,5 @@
 import type OpenAI from 'openai';
+import { DateTime } from 'luxon';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Tenant } from '@prisma/client';
 
@@ -131,5 +132,33 @@ describe('ResponseGenerator', () => {
     });
 
     expect(result.quick_replies).toEqual(['Tonight', 'Tomorrow', 'See more times']);
+  });
+
+  it('resolves start and end ISO from proposal with part-of-day fallback', () => {
+    const generator = new ResponseGenerator(mockOpenAI as unknown as OpenAI);
+    const proposal = {
+      tenantId: tenant.id,
+      name: 'Rossi',
+      people: 2,
+      dateISO: '2025-09-20',
+      partOfDay: 'evening',
+    } as any;
+
+    const startISO = generator.resolveStartISOFromProposal(proposal, tenant);
+    const endISO = generator.resolveEndISOFromProposal(proposal, tenant);
+
+    const start = DateTime.fromISO(startISO, { zone: tenant.timezone });
+    const end = DateTime.fromISO(endISO, { zone: tenant.timezone });
+
+    expect(start.toISODate()).toBe('2025-09-20');
+    expect(start.hour).toBe(20);
+    expect(end.diff(start, 'minutes').minutes).toBe(120);
+  });
+
+  it('builds localized missing message', async () => {
+    const generator = new ResponseGenerator(mockOpenAI as unknown as OpenAI);
+    const message = await generator.askForMissing(tenant, ['name', 'people']);
+    expect(message).toContain('Mi servono ancora');
+    expect(message.toLowerCase()).toContain('nome');
   });
 });
