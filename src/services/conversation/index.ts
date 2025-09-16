@@ -1,6 +1,6 @@
 export * from './conversation.service.js';
 export * from './state-machine.js';
-export { ConversationStateStore } from './state.store.js';
+export { getState, setStateCAS, newEmptyState, newPendingId } from './state-store.js';
 export type {
   Flow,
   PendingActionType,
