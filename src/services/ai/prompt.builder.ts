@@ -42,25 +42,39 @@ export class PromptBuilder {
     lines.push(`Data corrente: ${today}`);
     lines.push(`Fuso orario: ${timezone}`);
     lines.push(
-      'Analizza il messaggio utente seguente e restituisci SOLO un oggetto JSON con chiavi intent, confidence, slots.',
+      'Analizza il messaggio utente seguente e restituisci SOLO un oggetto JSON con chiavi intent, confidence, entities, missing, ambiguity, warnings.',
     );
-    lines.push('intent ∈ {create, modify, cancel, get_info, confirmation, unknown}.');
+    lines.push(
+      'intent deve essere una stringa UPPERCASE ∈ {CREATE_BOOKING, MODIFY_BOOKING, CANCEL_BOOKING, GET_INFO, CONFIRM_BOOKING, UNKNOWN}.',
+    );
     lines.push('confidence è un numero tra 0 e 1.');
-    lines.push('slots è un oggetto con informazioni estratte; se nessuna, usa {} o ometti.');
-    lines.push('Se non sei sicuro, usa intent "unknown" e confidence 0.0.');
+    lines.push(
+      'entities è un oggetto che mappa i nomi degli slot agli oggetti estratti; se assenti usa {}.',
+    );
+    lines.push('missing è un array di stringhe con gli slot indispensabili mancanti.');
+    lines.push(
+      'ambiguity è un array di oggetti che descrivono ambiguità ancora da chiarire (usa field + options).',
+    );
+    lines.push('warnings è un array di stringhe; se nessun warning usa [].');
     lines.push(
       'Estrai e normalizza espressioni temporali italiane (oggi, domani, dopodomani, stasera, domani sera, alle 20, tra 30 minuti) in ISO 8601 nel fuso orario indicato.',
     );
     lines.push('Esempi:');
     lines.push(
-      'domani alle 20 per 4, sono Marco -> {"intent":"create","confidence":0.9,"slots":{"name":"Marco","people":4,"startAt":"<ISO>","endAt":"<ISO>"}}',
+      'domani alle 20 per 4, sono Marco -> {"intent":"CREATE_BOOKING","confidence":0.9,"entities":{"name":{"value":"Marco"},"people":{"value":4},"when":{"value":{"startAt":"2025-09-19T20:00:00+02:00","endAt":"2025-09-19T22:00:00+02:00"}}},"missing":[],"ambiguity":[],"warnings":[]}',
     );
-    lines.push('puoi spostare a domani? -> {"intent":"modify","confidence":0.9,"slots":{}}');
     lines.push(
-      'annulla la prenotazione a nome Marco -> {"intent":"cancel","confidence":0.9,"slots":{"name":"Marco"}}',
+      'puoi spostare la prenotazione di Marco a domani sera -> {"intent":"MODIFY_BOOKING","confidence":0.85,"entities":{"name":{"value":"Marco"},"when":{"value":{"startAt":"2025-09-19T20:00:00+02:00","endAt":"2025-09-19T22:00:00+02:00"}}},"missing":["bookingId"],"ambiguity":[],"warnings":[]}',
     );
-    lines.push('siete aperti domani? -> {"intent":"get_info","confidence":0.9,"slots":{}}');
-    lines.push('va bene, confermo -> {"intent":"confirmation","confidence":0.9,"slots":{}}');
+    lines.push(
+      'annulla la prenotazione abc123 -> {"intent":"CANCEL_BOOKING","confidence":0.92,"entities":{"bookingId":{"value":"abc123"}},"missing":[],"ambiguity":[],"warnings":[]}',
+    );
+    lines.push(
+      'siete aperti domani? -> {"intent":"GET_INFO","confidence":0.8,"entities":{},"missing":[],"ambiguity":[],"warnings":[]}',
+    );
+    lines.push(
+      'va bene, confermo -> {"intent":"CONFIRM_BOOKING","confidence":0.75,"entities":{},"missing":[],"ambiguity":[],"warnings":[]}',
+    );
     lines.push('---');
     lines.push(`Utente: ${message}`);
     lines.push('Risposta JSON:');
