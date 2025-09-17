@@ -1,5 +1,6 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import type { WAEvent } from '@types/index.js';
+import { randomUUID } from 'node:crypto';
+
+import { Router } from 'express';
 
 import { EnhancedNLUService } from '@services/ai/nlu.service.js';
 import { ConversationService } from '@services/conversation/conversation.service.js';
@@ -9,55 +10,33 @@ import { prisma } from '@infra/database/prisma.client.js';
 const router = Router();
 
 if (process.env.NODE_ENV !== 'production') {
+  const nlu = new EnhancedNLUService();
   const conversation = new ConversationService();
 
-  router.post('/dev/ai/respond', async (req: Request, res: Response, next: NextFunction) => {
+  router.post('/dev/ai/respond', async (req, res, next) => {
     try {
-      const { tenantId, userPhone, text } = req.body ?? {};
-      if (!tenantId || !userPhone || !text) {
-        return res.status(400).json({ message: 'tenantId, userPhone and text are required' });
+      const tenantId = String(req.body?.tenantId ?? 'demo-tenant-aurora');
+      const userPhone = String(req.body?.userPhone ?? '+390000000000');
+      const text = String(req.body?.text ?? '');
+      if (!text) {
+        return res.status(400).json({ message: 'text required' });
       }
 
-      let tenant: any = null;
-      let tenantError: string | undefined;
-      try {
-        tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
-      } catch (err) {
-        tenantError = err instanceof Error ? err.message : 'tenant_lookup_failed';
+      const tenant = await (prisma as any).tenant.findUnique({ where: { id: tenantId } });
+      if (!tenant) {
+        return res.status(404).json({ message: 'Tenant not found' });
       }
 
-      const fallbackTenant = tenant ?? {
-        id: tenantId,
-        name: tenantId,
-        timezone: 'Europe/Rome',
-        config: {},
-        features: {},
-      };
-
-      let nlu: unknown = null;
-      let nluError: string | undefined;
-      try {
-        const nluService = new EnhancedNLUService();
-        nlu = await nluService.parseWithContext(text, null, fallbackTenant as any);
-      } catch (err) {
-        nluError = err instanceof Error ? err.message : 'nlu_unavailable';
-      }
-
-      const event: WAEvent = {
+      const intent = await nlu.parseWithContext(text, null, tenant as any);
+      const event = {
         tenantId,
         userPhone,
         message: text,
-        messageId: req.body?.messageId ?? `dev-${Date.now().toString(36)}`,
-      };
-      const { replyText } = await conversation.processMessage(event);
+        messageId: randomUUID(),
+      } as const;
+      const reply = await conversation.processMessage(event, intent);
 
-      const payload: Record<string, unknown> = { replyText };
-      if (nlu) payload.nlu = nlu;
-      if (nluError) payload.nluError = nluError;
-      if (!tenant && !tenantError) payload.tenantFound = false;
-      if (tenantError) payload.tenantError = tenantError;
-
-      res.json(payload);
+      res.json({ intent, reply });
     } catch (err) {
       next(err);
     }

@@ -5,5 +5,6 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: 'node',
+    setupFiles: ['src/test/setupEnv.ts'],
   },
 });

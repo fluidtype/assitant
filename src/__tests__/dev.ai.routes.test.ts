@@ -1,28 +1,87 @@
 import request from 'supertest';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { parseWithContextMock, processMessageMock, tenantFindUniqueMock } = vi.hoisted(() => ({
+  parseWithContextMock: vi.fn(),
+  processMessageMock: vi.fn(),
+  tenantFindUniqueMock: vi
+    .fn()
+    .mockResolvedValue({ id: 'demo-tenant-aurora', name: 'Demo tenant' }),
+}));
+
+vi.mock('@services/ai/nlu.service.js', () => ({
+  EnhancedNLUService: vi.fn().mockImplementation(() => ({
+    parseWithContext: parseWithContextMock,
+  })),
+}));
+
+vi.mock('@services/conversation/conversation.service.js', () => ({
+  ConversationService: vi.fn().mockImplementation(() => ({
+    processMessage: processMessageMock,
+  })),
+}));
+
+vi.mock('@infra/database/prisma.client.js', () => ({
+  prisma: {
+    tenant: {
+      findUnique: tenantFindUniqueMock,
+    },
+  },
+}));
+
+vi.mock('@config/env.config', () => ({
+  config: {
+    OPENAI_MODEL: 'test-model',
+    OPENAI_TEMPERATURE: 0.2,
+    TIMEZONE: 'Europe/Rome',
+  },
+}));
 
 import { buildTestApp } from '@test/utils/buildTestApp.js';
 
-process.env.NODE_ENV = process.env.NODE_ENV ?? 'test';
-process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://test:test@localhost:5432/test';
-process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+import devAiRoutes from '@api/routes/dev.ai.routes.js';
 
-describe('dev AI routes', () => {
-  let app: ReturnType<typeof buildTestApp> | null = null;
-
-  beforeAll(async () => {
-    const { default: devAiRoutes } = await import('@api/routes/dev.ai.routes.js');
-    app = buildTestApp(devAiRoutes);
+describe('POST /v1/dev/ai/respond', () => {
+  beforeEach(() => {
+    parseWithContextMock.mockReset();
+    processMessageMock.mockReset();
+    tenantFindUniqueMock.mockReset();
+    tenantFindUniqueMock.mockResolvedValue({ id: 'demo-tenant-aurora', name: 'Demo tenant' });
+    parseWithContextMock.mockResolvedValue({
+      intent: 'CREATE_BOOKING',
+      confidence: 0.9,
+      entities: {},
+      missing: [],
+      ambiguity: [],
+      warnings: [],
+    });
+    processMessageMock.mockResolvedValue({ replyText: 'ok' });
   });
 
-  it('responds to POST /dev/ai/respond', async () => {
-    const response = await request(app!).post('/v1/dev/ai/respond').send({
-      tenantId: 'tenant-test',
-      userPhone: '+390000000000',
-      text: 'ciao',
-    });
+  it('returns intent payload and conversation reply', async () => {
+    const app = buildTestApp(devAiRoutes);
+    const res = await request(app)
+      .post('/v1/dev/ai/respond')
+      .send({ tenantId: 'demo-tenant-aurora', userPhone: '+390000000001', text: 'ciao' })
+      .expect(200);
 
-    expect(response.status).toBe(200);
-    expect(response.body.replyText).toBe('echo: ciao');
+    expect(res.body.intent).toEqual({
+      intent: 'CREATE_BOOKING',
+      confidence: 0.9,
+      entities: {},
+      missing: [],
+      ambiguity: [],
+      warnings: [],
+    });
+    expect(res.body.reply).toEqual({ replyText: 'ok' });
+    expect(parseWithContextMock).toHaveBeenCalledWith('ciao', null, expect.anything());
+    expect(processMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'demo-tenant-aurora',
+        userPhone: '+390000000001',
+        message: 'ciao',
+      }),
+      expect.objectContaining({ intent: 'CREATE_BOOKING' }),
+    );
   });
 });

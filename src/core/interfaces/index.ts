@@ -11,23 +11,30 @@ export interface AvailabilityResult {
   available: boolean;
 }
 
-export const INTENT_NAMES = [
-  'CREATE_BOOKING',
-  'MODIFY_BOOKING',
-  'CANCEL_BOOKING',
-  'GET_INFORMATION',
-  'CONFIRMATION',
-  'UNKNOWN',
-] as const;
+export type IntentName =
+  | 'CREATE_BOOKING'
+  | 'MODIFY_BOOKING'
+  | 'CANCEL_BOOKING'
+  | 'GET_INFO'
+  | 'CONFIRM_BOOKING'
+  | 'UNKNOWN';
 
-export type IntentName = (typeof INTENT_NAMES)[number];
+export interface IntentEntity<T = unknown> {
+  value?: T;
+  confidence?: number;
+  original?: string;
+  [key: string]: unknown;
+}
+
+export interface IntentAmbiguity {
+  field: string;
+  options?: IntentEntity[];
+  [key: string]: unknown;
+}
 
 export interface IntentResult {
   intent: IntentName;
   confidence: number;
-  entities: Record<string, unknown>;
-  missing: string[];
-  ambiguity: string[];
   warnings: string[];
 }
 

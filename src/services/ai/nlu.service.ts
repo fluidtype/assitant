@@ -3,8 +3,12 @@ import OpenAI from 'openai';
 import type { ConversationState } from '@services/cache/conversation-cache.js';
 
 import type { TenantEntity } from '@core/entities/tenant.entity.js';
-import type { IntentName, IntentResult } from '@core/interfaces/index.js';
-import { INTENT_NAMES } from '@core/interfaces/index.js';
+import type {
+  IntentAmbiguity,
+  IntentEntity,
+  IntentName,
+  IntentResult,
+} from '@core/interfaces/index.js';
 
 import { getOpenAI } from '@infra/openai/openai.client.js';
 
@@ -12,57 +16,87 @@ import { config } from '@config/env.config';
 
 import { PromptBuilder } from './prompt.builder.js';
 
-const INTENT_SET = new Set<IntentName>(INTENT_NAMES);
-
-const LEGACY_INTENT_MAP: Record<string, IntentName> = {
+const INTENT_ALIASES: Record<string, IntentName> = {
   CREATE: 'CREATE_BOOKING',
   CREATE_BOOKING: 'CREATE_BOOKING',
-  CANCEL: 'CANCEL_BOOKING',
-  CANCEL_BOOKING: 'CANCEL_BOOKING',
   MODIFY: 'MODIFY_BOOKING',
   MODIFY_BOOKING: 'MODIFY_BOOKING',
-  UPDATE_BOOKING: 'MODIFY_BOOKING',
-  GET_INFO: 'GET_INFORMATION',
-  GET_INFORMATION: 'GET_INFORMATION',
-  INFO: 'GET_INFORMATION',
-  CONFIRMATION: 'CONFIRMATION',
-  CONFIRM: 'CONFIRMATION',
+  CANCEL: 'CANCEL_BOOKING',
+  CANCEL_BOOKING: 'CANCEL_BOOKING',
+  GET_INFO: 'GET_INFO',
+  GETINFO: 'GET_INFO',
+  GET_INFORMATION: 'GET_INFO',
+  CONFIRM: 'CONFIRM_BOOKING',
+  CONFIRM_BOOKING: 'CONFIRM_BOOKING',
+  CONFIRMATION: 'CONFIRM_BOOKING',
   UNKNOWN: 'UNKNOWN',
 };
 
-const normalizeIntent = (value: unknown): IntentName => {
+function normalizeIntent(value: unknown): IntentName {
   if (typeof value !== 'string') return 'UNKNOWN';
-  const normalized = value
-    .trim()
-    .replace(/[-\s]+/g, '_')
-    .toUpperCase();
-  return (
-    LEGACY_INTENT_MAP[normalized] ??
-    (INTENT_SET.has(normalized as IntentName) ? (normalized as IntentName) : 'UNKNOWN')
-  );
-};
+  const normalized = value.trim().toUpperCase();
+  return INTENT_ALIASES[normalized] ?? 'UNKNOWN';
+}
 
-const normalizeConfidence = (value: unknown): number => {
-  if (typeof value !== 'number' || Number.isNaN(value)) return 0;
-  if (!Number.isFinite(value)) return 0;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-};
-
-const normalizeRecord = (value: unknown): Record<string, unknown> => {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
+function sanitizeEntities(raw: unknown): Record<string, IntentEntity | undefined> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const entries = Object.entries(raw as Record<string, unknown>);
+  const result: Record<string, IntentEntity | undefined> = {};
+  for (const [key, value] of entries) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = value as IntentEntity;
+      continue;
+    }
+    if (value !== undefined && value !== null) {
+      result[key] = { value };
+    }
   }
-  return {};
-};
+  return result;
+}
 
-const normalizeStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-    .map((item) => item.trim());
-};
+function asStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object' && 'field' in (item as Record<string, unknown>)) {
+        const field = (item as Record<string, unknown>).field;
+        if (typeof field === 'string') return field;
+      }
+      return null;
+    })
+    .filter((item): item is string => Boolean(item));
+}
+
+function sanitizeAmbiguity(raw: unknown): IntentAmbiguity[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const fieldValue =
+          'field' in item && typeof (item as any).field === 'string'
+            ? (item as any).field
+            : 'unknown';
+        const options =
+          'options' in item && Array.isArray((item as any).options)
+            ? ((item as any).options.filter(
+                (opt: unknown) => !opt || typeof opt === 'object',
+              ) as IntentEntity[])
+            : undefined;
+        return { field: fieldValue, options } satisfies IntentAmbiguity;
+      }
+      if (typeof item === 'string') {
+        return { field: item } satisfies IntentAmbiguity;
+      }
+      return null;
+    })
+    .filter((item): item is IntentAmbiguity => item !== null);
+}
+
+function sanitizeWarnings(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === 'string');
+}
 
 export class EnhancedNLUService {
   constructor(
@@ -101,14 +135,18 @@ export class EnhancedNLUService {
       const text = raw.trim().replace(/^```(?:json)?|```$/g, '');
       const parsed = JSON.parse(text);
 
-      return {
-        intent: normalizeIntent(parsed.intent),
-        confidence: normalizeConfidence(parsed.confidence),
-        entities: normalizeRecord((parsed as { entities?: unknown }).entities),
-        missing: normalizeStringArray((parsed as { missing?: unknown }).missing),
-        ambiguity: normalizeStringArray((parsed as { ambiguity?: unknown }).ambiguity),
-        warnings: normalizeStringArray((parsed as { warnings?: unknown }).warnings),
-      } satisfies IntentResult;
+      const intent = normalizeIntent(parsed.intent);
+
+      let confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+      if (confidence < 0 || confidence > 1 || Number.isNaN(confidence)) confidence = 0;
+
+      const entities = sanitizeEntities(parsed.entities);
+      const missing = asStringArray(parsed.missing);
+      const ambiguity = sanitizeAmbiguity(parsed.ambiguity);
+      const warnings = sanitizeWarnings(parsed.warnings);
+
+      return { intent, confidence, entities, missing, ambiguity, warnings };
+
     } catch {
       return {
         intent: 'UNKNOWN',
@@ -117,7 +155,7 @@ export class EnhancedNLUService {
         missing: [],
         ambiguity: [],
         warnings: ['nlu_fallback'],
-      };
+      } satisfies IntentResult;
     }
   }
 }
