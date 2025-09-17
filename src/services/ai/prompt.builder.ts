@@ -56,6 +56,7 @@ export class PromptBuilder {
       'ambiguity è un array di oggetti che descrivono ambiguità ancora da chiarire (usa field + options).',
     );
     lines.push('warnings è un array di stringhe; se nessun warning usa [].');
+
     lines.push(
       'Estrai e normalizza espressioni temporali italiane (oggi, domani, dopodomani, stasera, domani sera, alle 20, tra 30 minuti) in ISO 8601 nel fuso orario indicato.',
     );
@@ -74,6 +75,7 @@ export class PromptBuilder {
     );
     lines.push(
       'va bene, confermo -> {"intent":"CONFIRM_BOOKING","confidence":0.75,"entities":{},"missing":[],"ambiguity":[],"warnings":[]}',
+
     );
     lines.push('---');
     lines.push(`Utente: ${message}`);

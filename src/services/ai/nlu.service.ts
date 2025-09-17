@@ -146,6 +146,7 @@ export class EnhancedNLUService {
       const warnings = sanitizeWarnings(parsed.warnings);
 
       return { intent, confidence, entities, missing, ambiguity, warnings };
+
     } catch {
       return {
         intent: 'UNKNOWN',

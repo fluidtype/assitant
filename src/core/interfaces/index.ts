@@ -35,9 +35,6 @@ export interface IntentAmbiguity {
 export interface IntentResult {
   intent: IntentName;
   confidence: number;
-  entities: Record<string, IntentEntity | undefined>;
-  missing: string[];
-  ambiguity: IntentAmbiguity[];
   warnings: string[];
 }
 
